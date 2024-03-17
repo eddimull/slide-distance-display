@@ -1,7 +1,7 @@
 #include "Arduino.h"
 #include "TFT_eSPI.h" /* Please use the TFT library provided in the library. */
 #include "pin_config.h"
-#include <Ultrasonic.h>
+#include "em_ultrasonic.h"
 #include "OneButton.h"
 #include "color_rectangle_sprite.h"
 
@@ -41,15 +41,15 @@ lcd_cmd_t lcd_st7789v[] = {
 };
 #endif
 OneButton button(BUTTON_INPUT, true);
-Ultrasonic ultrasonic1(12, 13); // An ultrasonic sensor HC-04
+MySensor ultrasonic(12, 13); // An ultrasonic sensor HC-04
 
 const int MAX_DISTANCE = 80; // Maximum distance in centimeters
 const int NUM_READINGS = 5;  // Number of readings to average
 
-int readings[NUM_READINGS]; // Array to store the readings
-int readIndex = 0;          // Index of the current reading
-int total = 0;              // Running total of readings
-float average = 0;          // Calculated average distance
+float readings[NUM_READINGS]; // Array to store the readings
+int readIndex = 0;            // Index of the current reading
+int total = 0;                // Running total of readings
+float average = 0;            // Calculated average distance
 
 int backgroundColors[] = {TFT_BLACK, TFT_BLUE, TFT_RED, TFT_GREEN, TFT_CYAN, TFT_MAGENTA, TFT_YELLOW, TFT_WHITE};
 int backgroundColorsIndex = 0;
@@ -116,33 +116,14 @@ void loop()
     // targetTime = millis();
     // tft.setTextSize(3);
     // tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    int distance = ultrasonic1.read();
-
-    // // // Limit the distance to the maximum range
+    double distance = ultrasonic.read();
     if (distance > MAX_DISTANCE)
     {
-        distance = MAX_DISTANCE;
+        return;
     }
 
-    // // // Subtract the last reading
-    total = total - readings[readIndex];
-
-    // // // Add the new reading to the total
-    readings[readIndex] = distance;
-    total = total + readings[readIndex];
-
-    // // // Advance to the next position in the array
-    readIndex = readIndex + 1;
-
-    // // // If we've reached the end of the array, wrap around to the beginning
-    if (readIndex >= NUM_READINGS)
-    {
-        readIndex = 0;
-    }
-
-    // // // Calculate the average distance
-    average = total / NUM_READINGS;
-    float ratio = static_cast<float>(average) / MAX_DISTANCE;
+    float ratio = distance / MAX_DISTANCE;
+    // Serial.println(String(ratio));
     // // // Display the average distance on the TFT screen
     // // Write the new text
     // String averageStr = String(average) + " cm";
@@ -174,7 +155,6 @@ void loop()
     // }
 
     colorRectangleSprite->setPosition(ratio);
-    delay(10);
 }
 
 // TFT Pin check
