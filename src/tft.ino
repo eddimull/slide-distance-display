@@ -4,6 +4,7 @@
 #include "em_ultrasonic.h"
 #include "OneButton.h"
 #include "color_rectangle_sprite.h"
+#include "contact_mic.h"
 
 /* The product now has two screens, and the initialization code needs a small change in the new version. The LCD_MODULE_CMD_1 is used to define the
  * switch macro. */
@@ -41,15 +42,19 @@ lcd_cmd_t lcd_st7789v[] = {
 };
 #endif
 OneButton button(BUTTON_INPUT, true);
-MySensor ultrasonic(12, 13); // An ultrasonic sensor HC-04
+// MySensor ultrasonic(12, 13); // An ultrasonic sensor HC-04
+ContactMicrophone mic1(1);   // A contact microphone
+ContactMicrophone mic2(2);   // A contact microphone
+ContactMicrophone mic3(3);   // A contact microphone
+ContactMicrophone mic4(10);  // A contact microphone
+ContactMicrophone mic5(11);  // A contact microphone
+ContactMicrophone mic6(12);  // A contact microphone
+ContactMicrophone mic7(13);  // A contact microphone
+ContactMicrophone mic8(16);  // A contact microphone
+ContactMicrophone mic9(17);  // A contact microphone
+ContactMicrophone mic10(18); // A contact microphone
 
-const int MAX_DISTANCE = 80; // Maximum distance in centimeters
-const int NUM_READINGS = 5;  // Number of readings to average
-
-float readings[NUM_READINGS]; // Array to store the readings
-int readIndex = 0;            // Index of the current reading
-int total = 0;                // Running total of readings
-float average = 0;            // Calculated average distance
+const int MAX_DISTANCE = 64; // Maximum distance in centimeters
 
 int backgroundColors[] = {TFT_BLACK, TFT_BLUE, TFT_RED, TFT_GREEN, TFT_CYAN, TFT_MAGENTA, TFT_YELLOW, TFT_WHITE};
 int backgroundColorsIndex = 0;
@@ -62,7 +67,17 @@ void setup()
     digitalWrite(PIN_POWER_ON, HIGH);
 
     Serial.begin(115200);
-    Serial.println("Hello T-Display-S3");
+    mic1.begin();
+    mic2.begin();
+    mic3.begin();
+    mic4.begin();
+    mic5.begin();
+    mic6.begin();
+    mic7.begin();
+    mic8.begin();
+    mic9.begin();
+    mic10.begin();
+
     tft.begin();
 
 #if defined(LCD_MODULE_CMD_1)
@@ -94,7 +109,7 @@ void setup()
 #endif
     button.attachClick(changeBackgroundColor);
 
-    colorRectangleSprite = new ColorRectangleSprite(tft);
+    // colorRectangleSprite = new ColorRectangleSprite(tft);
 }
 void changeBackgroundColor()
 {
@@ -107,54 +122,19 @@ void changeBackgroundColor()
 float positionPercent = 0;
 void loop()
 {
-    // button.tick();
-    // // if (currentBackgroundColor != backgroundColors[backgroundColorsIndex])
-    // // {
-    // //     currentBackgroundColor = backgroundColors[backgroundColorsIndex];
-    // //     tft.fillScreen(currentBackgroundColor);
-    // // }
-    // targetTime = millis();
-    // tft.setTextSize(3);
-    // tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    double distance = ultrasonic.read();
-    if (distance > MAX_DISTANCE)
-    {
-        return;
-    }
+    // clear the terminal window
+    Serial.println(" ");
+    Serial.println(" ");
+    Serial.println(" ");
+    Serial.println(" ");
+    Serial.println(" ");
+    Serial.println(" ");
+    Serial.println(" ");
+    Serial.println(" ");
 
-    float ratio = distance / MAX_DISTANCE;
-    // Serial.println(String(ratio));
-    // // // Display the average distance on the TFT screen
-    // // Write the new text
-    // String averageStr = String(average) + " cm";
-    // String ratioStr = String(static_cast<int>(ratio * 100)) + "%";
-    // Only redraw the text if it's different from the previous text
-    // if (averageStr != previousAverage)
-    // {
-    //     // Overwrite the old text with spaces
-    //     tft.drawString("      ", 0, 0, 2);
-    //     // Write the new text
-    //     tft.drawString(averageStr, 0, 0, 2);
-    //     // Store the new string for the next loop iteration
-    //     previousAverage = averageStr;
-    // }
+    Serial.println("Pin " + String(mic4.getPin()) + " Raw value: " + String(mic4.getPitch()) + " ");
 
-    // if (ratioStr != previousRatio)
-    // {
-    //     // Overwrite the old text with spaces
-    //     tft.drawRightString("       ", tft.width(), 0, 2);
-    //     // Write the new text
-    //     tft.drawRightString(ratioStr, tft.width(), 0, 2);
-    //     // Store the new string for the next loop iteration
-    //     previousRatio = ratioStr;
-    // }
-    // positionPercent += 0.01;
-    // if (positionPercent >= 1)
-    // {
-    //     positionPercent = 0;
-    // }
-
-    colorRectangleSprite->setPosition(ratio);
+    delay(200);
 }
 
 // TFT Pin check
