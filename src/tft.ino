@@ -1,9 +1,11 @@
 #include "Arduino.h"
 #include "TFT_eSPI.h" /* Please use the TFT library provided in the library. */
 #include "pin_config.h"
-#include "em_ultrasonic.h"
 #include "OneButton.h"
 #include "color_rectangle_sprite.h"
+#include <Wire.h>
+#include <VL53L0X.h>
+#include "moving_average_filter.h"
 
 /* The product now has two screens, and the initialization code needs a small change in the new version. The LCD_MODULE_CMD_1 is used to define the
  * switch macro. */
@@ -41,7 +43,8 @@ lcd_cmd_t lcd_st7789v[] = {
 };
 #endif
 OneButton button(BUTTON_INPUT, true);
-MySensor ultrasonic(12, 13); // An ultrasonic sensor HC-04
+VL53L0X sensor;
+MovingAverageFilter filter;
 
 const int MAX_DISTANCE = 80; // Maximum distance in centimeters
 const int NUM_READINGS = 5;  // Number of readings to average
@@ -61,9 +64,39 @@ void setup()
     pinMode(PIN_POWER_ON, OUTPUT);
     digitalWrite(PIN_POWER_ON, HIGH);
 
-    Serial.begin(115200);
-    Serial.println("Hello T-Display-S3");
+    // Serial.begin(9600);
+    Wire.begin(18, 44);
     tft.begin();
+    tft.setRotation(3);
+    tft.setSwapBytes(false);
+
+    sensor.setTimeout(500);
+    if (!sensor.init())
+    {
+        Serial.println("Failed to detect and initialize sensor!");
+        // clear screen and display initialization error
+        tft.fillScreen(TFT_BLACK);
+        tft.setTextColor(TFT_RED);
+        tft.setTextSize(2);
+        tft.setCursor(0, 0);
+        tft.println("Failed to detect and initialize sensor!");
+        tft.println("");
+        tft.println("Connect sensor and restart!");
+
+        while (1)
+        {
+        }
+        return;
+    }
+    else
+    {
+
+        button.attachClick(changeBackgroundColor);
+
+        colorRectangleSprite = new ColorRectangleSprite(tft);
+        colorRectangleSprite->setMaxDistance(MAX_DISTANCE);
+        sensor.startContinuous();
+    }
 
 #if defined(LCD_MODULE_CMD_1)
     for (uint8_t i = 0; i < (sizeof(lcd_st7789v) / sizeof(lcd_cmd_t)); i++)
@@ -81,9 +114,6 @@ void setup()
     }
 #endif
 
-    tft.setRotation(3);
-    tft.setSwapBytes(false);
-
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
     ledcSetup(0, 2000, 8);
     ledcAttachPin(PIN_LCD_BL, 0);
@@ -92,9 +122,6 @@ void setup()
     ledcAttach(PIN_LCD_BL, 200, 8);
     ledcWrite(PIN_LCD_BL, 255);
 #endif
-    button.attachClick(changeBackgroundColor);
-
-    colorRectangleSprite = new ColorRectangleSprite(tft);
 }
 void changeBackgroundColor()
 {
@@ -105,56 +132,41 @@ void changeBackgroundColor()
     }
 }
 float positionPercent = 0;
+
+float getDistance()
+{
+    float distance = sensor.readRangeContinuousMillimeters() / 10.0;
+
+    // Limit the distance to the range of 0 to MAX_DISTANCE
+    distance = constrain(distance, 0, MAX_DISTANCE);
+
+    // Update the moving average
+    total = total - readings[readIndex];
+    readings[readIndex] = distance;
+    total = total + readings[readIndex];
+    readIndex = (readIndex + 1) % NUM_READINGS;
+
+    // Calculate the average distance
+    float averageDistance = total / NUM_READINGS;
+
+    return averageDistance;
+}
 void loop()
 {
-    // button.tick();
-    // // if (currentBackgroundColor != backgroundColors[backgroundColorsIndex])
-    // // {
-    // //     currentBackgroundColor = backgroundColors[backgroundColorsIndex];
-    // //     tft.fillScreen(currentBackgroundColor);
-    // // }
-    // targetTime = millis();
-    // tft.setTextSize(3);
-    // tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    double distance = ultrasonic.read();
-    if (distance > MAX_DISTANCE)
+    float distance = sensor.readRangeContinuousMillimeters();
+    distance = constrain(distance, 0, MAX_DISTANCE * 10);
+
+    if (sensor.timeoutOccurred())
     {
-        return;
+        Serial.println("Timeout");
     }
-
-    float ratio = distance / MAX_DISTANCE;
-    // Serial.println(String(ratio));
-    // // // Display the average distance on the TFT screen
-    // // Write the new text
-    // String averageStr = String(average) + " cm";
-    // String ratioStr = String(static_cast<int>(ratio * 100)) + "%";
-    // Only redraw the text if it's different from the previous text
-    // if (averageStr != previousAverage)
-    // {
-    //     // Overwrite the old text with spaces
-    //     tft.drawString("      ", 0, 0, 2);
-    //     // Write the new text
-    //     tft.drawString(averageStr, 0, 0, 2);
-    //     // Store the new string for the next loop iteration
-    //     previousAverage = averageStr;
-    // }
-
-    // if (ratioStr != previousRatio)
-    // {
-    //     // Overwrite the old text with spaces
-    //     tft.drawRightString("       ", tft.width(), 0, 2);
-    //     // Write the new text
-    //     tft.drawRightString(ratioStr, tft.width(), 0, 2);
-    //     // Store the new string for the next loop iteration
-    //     previousRatio = ratioStr;
-    // }
-    // positionPercent += 0.01;
-    // if (positionPercent >= 1)
-    // {
-    //     positionPercent = 0;
-    // }
-
-    colorRectangleSprite->setPosition(ratio);
+    else
+    {
+        float smoothedDistance = filter.process(distance) / 10.0;
+        // Serial.println(smoothedDistance);
+        colorRectangleSprite->setPosition(smoothedDistance / MAX_DISTANCE);
+    }
+    delay(10);
 }
 
 // TFT Pin check

@@ -10,6 +10,8 @@
             "includePath": [
                 "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/include",
                 "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/src",
+                "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/VL53L0X",
+                "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
                 "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/OneButton/src",
                 "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/Ultrasonic/src",
                 "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/TFT_eSPI",
@@ -210,6 +212,7 @@
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/qio_opi/include",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/cores/esp32",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/variants/lilygo_t_display_s3",
+                "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/lib/arduino-audio-tools",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/ArduinoOTA/src",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/AsyncUDP/src",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/BLE/src",
@@ -238,7 +241,6 @@
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src",
-                "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
                 ""
             ],
             "browse": {
@@ -246,6 +248,8 @@
                 "path": [
                     "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/include",
                     "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/src",
+                    "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/VL53L0X",
+                    "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
                     "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/OneButton/src",
                     "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/Ultrasonic/src",
                     "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/TFT_eSPI",
@@ -446,6 +450,7 @@
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/qio_opi/include",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/cores/esp32",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/variants/lilygo_t_display_s3",
+                    "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/lib/arduino-audio-tools",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/ArduinoOTA/src",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/AsyncUDP/src",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/BLE/src",
@@ -474,7 +479,6 @@
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src",
-                    "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
                     ""
                 ]
             },
