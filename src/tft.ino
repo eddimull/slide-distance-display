@@ -2,10 +2,9 @@
 #include "TFT_eSPI.h" /* Please use the TFT library provided in the library. */
 #include "pin_config.h"
 #include "OneButton.h"
-#include "color_rectangle_sprite.h"
 #include <Wire.h>
 #include <VL53L0X.h>
-#include "moving_average_filter.h"
+#include "screen_state.h"
 
 /* The product now has two screens, and the initialization code needs a small change in the new version. The LCD_MODULE_CMD_1 is used to define the
  * switch macro. */
@@ -13,7 +12,7 @@
 #define BUTTON_INPUT 0
 
 TFT_eSPI tft = TFT_eSPI();
-ColorRectangleSprite *colorRectangleSprite;
+
 #define WAIT 5000
 unsigned long targetTime = 0; // Used for testing draw times
 
@@ -44,7 +43,6 @@ lcd_cmd_t lcd_st7789v[] = {
 #endif
 OneButton button(BUTTON_INPUT, true);
 VL53L0X sensor;
-MovingAverageFilter filter;
 
 const int MAX_DISTANCE = 80; // Maximum distance in centimeters
 const int NUM_READINGS = 5;  // Number of readings to average
@@ -61,10 +59,11 @@ String previousAverage = "";
 String previousRatio = "";
 void setup()
 {
+    Serial.println("setup");
     pinMode(PIN_POWER_ON, OUTPUT);
     digitalWrite(PIN_POWER_ON, HIGH);
 
-    // Serial.begin(9600);
+    Serial.begin(115200);
     Wire.begin(18, 44);
     tft.begin();
     tft.setRotation(3);
@@ -92,9 +91,6 @@ void setup()
     {
 
         button.attachClick(changeBackgroundColor);
-
-        colorRectangleSprite = new ColorRectangleSprite(tft);
-        colorRectangleSprite->setMaxDistance(MAX_DISTANCE);
         sensor.startContinuous();
     }
 
@@ -131,41 +127,21 @@ void changeBackgroundColor()
         backgroundColorsIndex = 0;
     }
 }
-float positionPercent = 0;
 
-float getDistance()
-{
-    float distance = sensor.readRangeContinuousMillimeters() / 10.0;
+// Create states
+MenuState menuState;
+GameState gameState(tft, &sensor);
+// Create context and set initial state
+ScreenContext context(&gameState);
 
-    // Limit the distance to the range of 0 to MAX_DISTANCE
-    distance = constrain(distance, 0, MAX_DISTANCE);
-
-    // Update the moving average
-    total = total - readings[readIndex];
-    readings[readIndex] = distance;
-    total = total + readings[readIndex];
-    readIndex = (readIndex + 1) % NUM_READINGS;
-
-    // Calculate the average distance
-    float averageDistance = total / NUM_READINGS;
-
-    return averageDistance;
-}
 void loop()
 {
-    float distance = sensor.readRangeContinuousMillimeters();
-    distance = constrain(distance, 0, MAX_DISTANCE * 10);
 
-    if (sensor.timeoutOccurred())
-    {
-        Serial.println("Timeout");
-    }
-    else
-    {
-        float smoothedDistance = filter.process(distance) / 10.0;
-        // Serial.println(smoothedDistance);
-        colorRectangleSprite->setPosition(smoothedDistance / MAX_DISTANCE);
-    }
+    // Handle input and update state
+    context.handleInput();
+    context.update();
+    // Serial.println("loop");
+    context.render();
     delay(10);
 }
 
