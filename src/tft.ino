@@ -5,6 +5,7 @@
 #include "color_rectangle_sprite.h"
 #include <Wire.h>
 #include <VL53L0X.h>
+#include "moving_average_filter.h"
 
 /* The product now has two screens, and the initialization code needs a small change in the new version. The LCD_MODULE_CMD_1 is used to define the
  * switch macro. */
@@ -43,6 +44,7 @@ lcd_cmd_t lcd_st7789v[] = {
 #endif
 OneButton button(BUTTON_INPUT, true);
 VL53L0X sensor;
+MovingAverageFilter filter;
 
 const int MAX_DISTANCE = 80; // Maximum distance in centimeters
 const int NUM_READINGS = 5;  // Number of readings to average
@@ -62,19 +64,39 @@ void setup()
     pinMode(PIN_POWER_ON, OUTPUT);
     digitalWrite(PIN_POWER_ON, HIGH);
 
-    Serial.begin(9600);
+    // Serial.begin(9600);
     Wire.begin(18, 44);
     tft.begin();
+    tft.setRotation(3);
+    tft.setSwapBytes(false);
 
     sensor.setTimeout(500);
     if (!sensor.init())
     {
         Serial.println("Failed to detect and initialize sensor!");
+        // clear screen and display initialization error
+        tft.fillScreen(TFT_BLACK);
+        tft.setTextColor(TFT_RED);
+        tft.setTextSize(2);
+        tft.setCursor(0, 0);
+        tft.println("Failed to detect and initialize sensor!");
+        tft.println("");
+        tft.println("Connect sensor and restart!");
+
         while (1)
         {
         }
+        return;
     }
-    sensor.startContinuous();
+    else
+    {
+
+        button.attachClick(changeBackgroundColor);
+
+        colorRectangleSprite = new ColorRectangleSprite(tft);
+        colorRectangleSprite->setMaxDistance(MAX_DISTANCE);
+        sensor.startContinuous();
+    }
 
 #if defined(LCD_MODULE_CMD_1)
     for (uint8_t i = 0; i < (sizeof(lcd_st7789v) / sizeof(lcd_cmd_t)); i++)
@@ -92,9 +114,6 @@ void setup()
     }
 #endif
 
-    tft.setRotation(3);
-    tft.setSwapBytes(false);
-
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
     ledcSetup(0, 2000, 8);
     ledcAttachPin(PIN_LCD_BL, 0);
@@ -103,9 +122,6 @@ void setup()
     ledcAttach(PIN_LCD_BL, 200, 8);
     ledcWrite(PIN_LCD_BL, 255);
 #endif
-    button.attachClick(changeBackgroundColor);
-
-    colorRectangleSprite = new ColorRectangleSprite(tft);
 }
 void changeBackgroundColor()
 {
@@ -116,15 +132,41 @@ void changeBackgroundColor()
     }
 }
 float positionPercent = 0;
+
+float getDistance()
+{
+    float distance = sensor.readRangeContinuousMillimeters() / 10.0;
+
+    // Limit the distance to the range of 0 to MAX_DISTANCE
+    distance = constrain(distance, 0, MAX_DISTANCE);
+
+    // Update the moving average
+    total = total - readings[readIndex];
+    readings[readIndex] = distance;
+    total = total + readings[readIndex];
+    readIndex = (readIndex + 1) % NUM_READINGS;
+
+    // Calculate the average distance
+    float averageDistance = total / NUM_READINGS;
+
+    return averageDistance;
+}
 void loop()
 {
-    Serial.print(sensor.readRangeContinuousMillimeters());
+    float distance = sensor.readRangeContinuousMillimeters();
+    distance = constrain(distance, 0, MAX_DISTANCE * 10);
+
     if (sensor.timeoutOccurred())
     {
-        Serial.print(" TIMEOUT");
+        Serial.println("Timeout");
     }
-
-    Serial.println();
+    else
+    {
+        float smoothedDistance = filter.process(distance) / 10.0;
+        // Serial.println(smoothedDistance);
+        colorRectangleSprite->setPosition(smoothedDistance / MAX_DISTANCE);
+    }
+    delay(10);
 }
 
 // TFT Pin check
