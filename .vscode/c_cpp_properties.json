@@ -213,6 +213,7 @@
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/cores/esp32",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/variants/lilygo_t_display_s3",
                 "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/lib/arduino-audio-tools",
+                "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/lib/kalman",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/ArduinoOTA/src",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/AsyncUDP/src",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/BLE/src",
@@ -451,6 +452,7 @@
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/cores/esp32",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/variants/lilygo_t_display_s3",
                     "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/lib/arduino-audio-tools",
+                    "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/lib/kalman",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/ArduinoOTA/src",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/AsyncUDP/src",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/BLE/src",
@@ -483,7 +485,7 @@
                 ]
             },
             "defines": [
-                "PLATFORMIO=60113",
+                "PLATFORMIO=60115",
                 "ARDUINO_LILYGO_T_DISPLAY_S3",
                 "ARDUINO_USB_MODE=1",
                 "ARDUINO_USB_CDC_ON_BOOT=1",

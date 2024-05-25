@@ -58,6 +58,8 @@ public:
 
 #include "moving_average_filter.h"
 #include "color_rectangle_sprite.h"
+#include <SimpleKalmanFilter.h>
+#include <VL53L0X.h>
 class GameState : public ScreenState
 {
 private:
@@ -65,11 +67,17 @@ private:
     ColorRectangleSprite colorRectangleSprite;
     VL53L0X *sensor;
     MovingAverageFilter filter;
+    SimpleKalmanFilter simpleKalmanFilter;
+    float slideDistance;
+    float rawDistance;
     int MAX_DISTANCE = 80;
 
 public:
     GameState(TFT_eSPI &tft, VL53L0X *sensor)
-        : tft(tft), sensor(sensor), colorRectangleSprite(tft) {}
+        : tft(tft),
+          sensor(sensor),
+          simpleKalmanFilter(2, 2, 0.17),
+          colorRectangleSprite(tft, MAX_DISTANCE) {}
     void handleInput() override
     {
         // Handle input for game
@@ -82,8 +90,7 @@ public:
 
     void render() override
     {
-        float distance = sensor->readRangeContinuousMillimeters();
-        distance = constrain(distance, 0, MAX_DISTANCE * 10);
+        rawDistance = sensor->readRangeContinuousMillimeters() / 10.0;
 
         if (sensor->timeoutOccurred())
         {
@@ -91,8 +98,9 @@ public:
         }
         else
         {
-            float smoothedDistance = filter.process(distance) / 10.0;
-            colorRectangleSprite.setPosition(smoothedDistance / MAX_DISTANCE);
+
+            slideDistance = simpleKalmanFilter.updateEstimate(rawDistance);
+            colorRectangleSprite.setPosition(slideDistance);
         }
     }
 };

@@ -9,7 +9,7 @@ private:
     int screenHeight;
     int screenWidth;
     int colorWidth;
-    int maxDistance;
+    int maxDistance = 80;
     int const numberOfColors = 7;
     float currentPosition = 0;
 
@@ -24,7 +24,7 @@ private:
     }
 
 public:
-    ColorRectangleSprite(TFT_eSPI &display, int rectColors[7] = nullptr) : tft(display), sprite(&tft)
+    ColorRectangleSprite(TFT_eSPI &display, int MAX_DISTANCE = 80, int rectColors[7] = nullptr) : tft(display), sprite(&tft)
     {
 
         if (rectColors != nullptr)
@@ -47,20 +47,24 @@ public:
 
         screenWidth = tft.width();
         screenHeight = tft.height();
-        spriteWidth = screenWidth * numberOfColors;
+        spriteWidth = screenHeight * numberOfColors;
         colorWidth = spriteWidth / numberOfColors;
-
+        this->setMaxDistance(MAX_DISTANCE);
         sprite.createSprite(spriteWidth, screenHeight); // Create a sprite that is 7 times the width of the screen
         sprite.setColorDepth(8);
     }
 
     void setMaxDistance(int maxDistance)
     {
-        this->maxDistance = maxDistance;
+        maxDistance = maxDistance;
     }
 
-    void setPosition(float targetPercent)
+    void setPosition(float slideDistance)
     {
+        // first position is never going to be 0, so add a first position negative buffer.
+        slideDistance = slideDistance - 10;
+        float targetPercent = slideDistance / maxDistance;
+
         sprite.drawString(String(targetPercent), 0, 0, 7);
         // Ensure targetPercent is between 0.0 and 1.0
         targetPercent = max(0.0f, min(targetPercent, 1.0f));
