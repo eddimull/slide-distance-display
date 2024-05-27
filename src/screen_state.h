@@ -56,7 +56,6 @@ public:
     }
 };
 
-#include "moving_average_filter.h"
 #include "color_rectangle_sprite.h"
 #include <SimpleKalmanFilter.h>
 #include <VL53L0X.h>
@@ -66,7 +65,7 @@ private:
     TFT_eSPI &tft;
     ColorRectangleSprite colorRectangleSprite;
     VL53L0X *sensor;
-    MovingAverageFilter filter;
+
     SimpleKalmanFilter simpleKalmanFilter;
     float slideDistance;
     float rawDistance;

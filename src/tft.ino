@@ -142,7 +142,7 @@ void loop()
     context.update();
     // Serial.println("loop");
     context.render();
-    // delay(10);
+    delay(10);
 }
 
 // TFT Pin check
