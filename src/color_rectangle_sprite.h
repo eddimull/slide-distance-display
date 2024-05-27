@@ -90,6 +90,7 @@ public:
         this->setMaxDistance(MAX_DISTANCE);
         sprite.createSprite(spriteWidth, screenHeight); // Create a sprite that is 7 times the width of the screen
         sprite.setColorDepth(8);
+        sprite.fillSprite(TFT_BLACK); // Fill the sprite with black
 
         textSprite.createSprite(screenWidth, 50); // Adjust the size as needed
         textSprite.setColorDepth(8);

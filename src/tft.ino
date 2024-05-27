@@ -89,7 +89,7 @@ void setup()
     }
     else
     {
-
+        tft.fillScreen(TFT_BLACK);
         button.attachClick(changeBackgroundColor);
         sensor.startContinuous();
     }
