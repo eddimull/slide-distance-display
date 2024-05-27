@@ -24,7 +24,7 @@ private:
     {
         for (int i = 0; i <= numberOfColors - 1; i++)
         {
-            sprite.fillRect((i * colorWidth) + position, 50, colorWidth, 50, this->rectColors[i]);
+            sprite.fillRect((i * colorWidth) + position, 0, colorWidth, 50, this->rectColors[i]);
         }
     }
 
@@ -33,21 +33,20 @@ private:
         static float prevSlideDistance = 0;
         static unsigned long prevTime = 0;
         static int prevTargetColorIndex = -1;
+        static float prevSpeed = 0;
 
         float speed = 0;
+        unsigned long currentTime = millis();
+        float timeDelta = (currentTime - prevTime) / 1000.0; // Convert milliseconds to seconds
+
+        if (timeDelta > 0)
+        {
+            float distanceTraveled = abs(slideDistance - prevSlideDistance);
+            speed = (distanceTraveled / timeDelta) / 10; // Calculate speed in cm/s
+        }
+
         if (targetColorIndex != prevTargetColorIndex)
         {
-            unsigned long currentTime = millis();
-            float timeDelta = (currentTime - prevTime) / 1000.0; // Convert milliseconds to seconds
-
-            if (timeDelta > 0)
-            {
-                float distanceTraveled = abs(slideDistance - prevSlideDistance);
-                speed = (distanceTraveled / timeDelta); // Convert to cms (assuming slide distance is in centimeters)
-            }
-
-            prevSlideDistance = slideDistance;
-            prevTime = currentTime;
             prevTargetColorIndex = targetColorIndex;
             prevSpeed = speed;
         }
@@ -55,6 +54,9 @@ private:
         {
             speed = prevSpeed;
         }
+
+        prevSlideDistance = slideDistance;
+        prevTime = currentTime;
 
         return speed;
     }
@@ -81,15 +83,15 @@ public:
             this->rectColors[6] = TFT_VIOLET;
         }
 
-        int visibleHeight = tft.width(); // the screen is rotated, so width is the height
-        int visibleWidth = tft.height();
-        spriteWidth = visibleWidth * numberOfColors;
+        int screenHeight = tft.width(); // the screen is rotated, so width is the height
+        int screenWidth = tft.height();
+        spriteWidth = screenWidth * numberOfColors;
         colorWidth = spriteWidth / numberOfColors;
         this->setMaxDistance(MAX_DISTANCE);
-        sprite.createSprite(spriteWidth, 100); // Create a sprite that is 7 times the width of the screen
+        sprite.createSprite(spriteWidth, screenHeight); // Create a sprite that is 7 times the width of the screen
         sprite.setColorDepth(8);
 
-        textSprite.createSprite(visibleWidth, 50); // Adjust the size as needed
+        textSprite.createSprite(screenWidth, 50); // Adjust the size as needed
         textSprite.setColorDepth(8);
         textSprite.setTextColor(TFT_WHITE); // Set the text color
         textSprite.setTextSize(2);          // Set the text size
@@ -106,13 +108,13 @@ public:
         int slideDistanceInt = static_cast<int>(slideDistance);
         // Create a string in the format "slideDistanceInt / maxDistance"
         String debugString = String(slideDistanceInt) + " / " + String(static_cast<int>(maxDistance));
-        String positionString = "Position: " + String(positionNumber + 1);
-        String speedString = "Speed: " + String(speed, 2) + " cm/s";
+        String positionString = "Pos: " + String(positionNumber + 1);
+        String speedString = "CM/s: " + String(speed, 1);
         textSprite.fillSprite(TFT_BLACK); // Clear the sprite before drawing the new string
         // Draw the position string on the sprite
         textSprite.drawString(debugString, 0, 0, 2);
         textSprite.drawString(positionString, 0, 25, 2);
-        textSprite.drawString(speedString, 150, 0, 2);
+        textSprite.drawString(speedString, 160, 25, 2);
         textSprite.pushSprite(0, 0);
     }
 
@@ -154,7 +156,7 @@ public:
         // Draw the color rectangle at the currentPosition
         drawColorRectangle(static_cast<int>(currentPosition));
         // Push the sprite to the screen
-        sprite.pushSprite(0, 70);
+        sprite.pushSprite(0, 100);
         float speed = calculateSpeed(slideDistance, targetColorIndex);
 
         showStats(slideDistance, targetColorIndex, speed);
