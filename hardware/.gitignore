@@ -1,0 +1,13 @@
+.kicad-home/
+*-backups/
+*.lck
+fp-info-cache
+_autosave-*
+*.rpt
+slidepod.dsn
+slidepod.ses
+fab/slidepod-pos.csv
+freerouting.json
+.tools/
+__pycache__/
+*.kicad_prl
