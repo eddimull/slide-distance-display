@@ -1,0 +1,79 @@
+* SlidePod rev 0.1 — Piezo front-end simulation
+* MCP6001 op-amp, BAT54S input clamp, 1st-order anti-alias filter
+*
+* Open in LTspice (free from Analog Devices: https://www.analog.com/ltspice).
+* File > Open > slidepod-piezo.cir
+*
+* Run order:
+*   1. Ctrl+R  — runs both .ac and .tran analyses back to back
+*   2. .ac plot: probe V(PIEZO_ADC) to see the Bode plot (gain vs frequency)
+*      Expected: ~20.8 dB gain from ~35 Hz to ~15 kHz, rolling off either side
+*   3. .tran plot: probe V(OPA_IN), V(OPA_OUT), V(PIEZO_ADC) to see waveforms
+*      Set Vpiezo amplitude to 1 V to see the BAT54S clamping action
+*
+* Key results to look for:
+*   Mid-band gain  = 1 + R23/R25 = 1 + 100k/10k = 11x (20.8 dB)
+*   Low  -3 dB    ≈ 16-35 Hz (C15/R25 and Cpiezo/R19 HP poles)
+*   High -3 dB    ≈ 15.9 kHz (R26/C16 anti-alias, before the op-amp GBW rolls off)
+*   Clamp voltage ≈ 3.3 + 0.3 V and 0 - 0.3 V (BAT54S Schottky forward drop)
+
+* ── Power supply ────────────────────────────────────────────────────────
+V3V3   VCC GND 3.3
+
+* ── Mid-rail bias (1.65 V) ─────────────────────────────────────────────
+* C13 stiffens VBIAS against signals below ~160 Hz (1/(2pi*100k||100k*10u))
+R21    VCC   VBIAS 100k
+R22    VBIAS GND   100k
+C13    VBIAS GND   10u
+
+* ── Piezo transducer model ─────────────────────────────────────────────
+* A 27 mm brass disc is roughly 15 nF series capacitance with ~1 MΩ parallel loss.
+* 10 mVpk represents a moderate slide tap; raise to 1 V to test the clamp.
+Vpiezo PIEZO_SRC GND AC 10m SIN(0 10m 440 0 0)
+Cpiezo PIEZO_P   PIEZO_SRC 15n
+Rpiezo PIEZO_P   PIEZO_SRC 1Meg
+
+* ── Input network ───────────────────────────────────────────────────────
+* R19 + Cpiezo forms the first HP pole at 1/(2pi*1M*15n) ≈ 10 Hz.
+* R20 limits source impedance seen by the clamping diodes.
+R19    PIEZO_P VBIAS  1Meg
+R20    PIEZO_P OPA_IN 1k
+
+* ── BAT54S input clamp (Nexperia, dual Schottky in SOT-23) ─────────────
+* Clamps OPA_IN to roughly VCC+0.3 V and GND-0.3 V.
+* The 1 MΩ Rpiezo limits clamp current to safe levels.
+D1a    OPA_IN VCC    BAT54S
+D1b    GND    OPA_IN BAT54S
+.model BAT54S D(Is=1.5u N=1.1 Rs=5 Vj=0.3 Cjo=10p)
+
+* ── MCP6001 op-amp (Microchip, 1 MHz GBW, rail-to-rail I/O) ───────────
+* UniversalOpamp2 is a behavioural model built into LTspice.
+* MCP6001 datasheet: GBW=1 MHz, Avol=112 dB, Slew=0.6 V/µs, Iout=20 mA.
+XU5    OPA_IN OPA_FB VCC GND OPA_OUT UniversalOpamp2
++ Avol=112 GBW=1Meg Slew=600k Ilimit=20m Rail=0 Rinput=1T Routput=100
+
+* ── Feedback: non-inverting with AC-coupled Rg → band-limited gain ─────
+* Gain = 1 + R23/R25 = 11 at mid-band.
+* C15 + R25 creates a second HP pole at 1/(2pi*10k*1u) ≈ 16 Hz.
+* At DC: capacitor blocks Rg, gain → 1, output sits at VBIAS.
+R23    OPA_OUT OPA_FB 100k
+R25    OPA_FB  OPA_RG 10k
+C15    OPA_RG  VBIAS  1u
+
+* ── Output: series R + capacitor anti-alias filter ─────────────────────
+* fc = 1/(2pi * 1k * 10n) ≈ 15.9 kHz — below Nyquist for 32 kHz ADC.
+* Also isolates the ADC's internal sampling capacitor from the op-amp output.
+R26    OPA_OUT   PIEZO_ADC 1k
+C16    PIEZO_ADC GND       10n
+
+* ── Analyses ─────────────────────────────────────────────────────────────
+.ac oct 200 1 200k
+.tran 10m
+
+* ── Measurements (shown in SPICE Error Log after .ac run) ──────────────
+.meas AC gain_mid AVG V(PIEZO_ADC) from=200 to=5k
+.meas AC f_low  WHEN V(PIEZO_ADC)=DB(-3) RISE
+.meas AC f_high WHEN V(PIEZO_ADC)=DB(-3) FALL
+
+.backanno
+.end

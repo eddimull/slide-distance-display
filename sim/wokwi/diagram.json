@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "author": "SlidePod",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-s3-devkitc-1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-vl53l0x",
+      "id": "tof",
+      "top": -60,
+      "left": 540,
+      "attrs": { "distance": "200" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_r",
+      "top": 192,
+      "left": 548,
+      "rotate": 90,
+      "attrs": { "value": "1000" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_r",
+      "top": 192,
+      "left": 605,
+      "attrs": { "color": "red" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_g",
+      "top": 272,
+      "left": 548,
+      "rotate": 90,
+      "attrs": { "value": "33" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_g",
+      "top": 272,
+      "left": 605,
+      "attrs": { "color": "green" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_b",
+      "top": 352,
+      "left": 548,
+      "rotate": 90,
+      "attrs": { "value": "33" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_b",
+      "top": 352,
+      "left": 605,
+      "attrs": { "color": "blue" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "boot_btn",
+      "top": 460,
+      "left": 540,
+      "attrs": { "label": "BOOT" }
+    }
+  ],
+  "connections": [
+    ["esp:GND.1",   "tof:GND",    "black",  []],
+    ["esp:3V3",     "tof:VDD",    "red",    []],
+    ["esp:GPIO8",   "tof:SDA",    "blue",   []],
+    ["esp:GPIO9",   "tof:SCL",    "green",  []],
+    ["esp:GPIO5",   "tof:XSHUT",  "orange", []],
+
+    ["esp:GPIO11",  "r_r:1",      "red",    []],
+    ["r_r:2",       "led_r:K",    "red",    []],
+    ["led_r:A",     "esp:3V3",    "red",    []],
+
+    ["esp:GPIO12",  "r_g:1",      "green",  []],
+    ["r_g:2",       "led_g:K",    "green",  []],
+    ["led_g:A",     "esp:3V3",    "green",  []],
+
+    ["esp:GPIO13",  "r_b:1",      "blue",   []],
+    ["r_b:2",       "led_b:K",    "blue",   []],
+    ["led_b:A",     "esp:3V3",    "blue",   []],
+
+    ["boot_btn:1.l", "esp:GPIO0", "gray",   []],
+    ["boot_btn:1.r", "esp:GND.2", "black",  []]
+  ]
+}
