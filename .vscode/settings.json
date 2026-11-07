@@ -1,6 +1,7 @@
 {
     "files.associations": {
-        "iterator": "cpp"
+        "iterator": "cpp",
+        "cmath": "cpp"
     },
     "idf.port": "/dev/ttyACM0"
 }

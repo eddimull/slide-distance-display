@@ -10,10 +10,10 @@
             "includePath": [
                 "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/include",
                 "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/src",
+                "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/lib/kalman",
                 "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/VL53L0X",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
                 "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/OneButton/src",
-                "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/Ultrasonic/src",
                 "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/TFT_eSPI",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/LittleFS/src",
                 "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/SPIFFS/src",
@@ -248,10 +248,10 @@
                 "path": [
                     "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/include",
                     "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/src",
+                    "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/lib/kalman",
                     "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/VL53L0X",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
                     "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/OneButton/src",
-                    "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/Ultrasonic/src",
                     "/home/eddie/Documents/PlatformIO/Projects/SlideDistance/.pio/libdeps/lilygo-t-display-s3/TFT_eSPI",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/LittleFS/src",
                     "/home/eddie/.platformio/packages/framework-arduinoespressif32/libraries/SPIFFS/src",
@@ -483,7 +483,7 @@
                 ]
             },
             "defines": [
-                "PLATFORMIO=60113",
+                "PLATFORMIO=60115",
                 "ARDUINO_LILYGO_T_DISPLAY_S3",
                 "ARDUINO_USB_MODE=1",
                 "ARDUINO_USB_CDC_ON_BOOT=1",
