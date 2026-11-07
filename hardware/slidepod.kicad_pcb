@@ -14184,6 +14184,78 @@
 			)
 		)
 	)
+	(footprint ""
+		(layer "F.Cu")
+		(uuid "b0001001-0000-0000-0000-000000000001")
+		(at 101.5 101.5)
+		(attr exclude_from_pos_files exclude_from_bom)
+		(property "Reference" "TH1"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(uuid "b0001001-0000-0000-0000-000000000002")
+			(effects
+				(font
+					(size 0.5 0.5)
+					(thickness 0.08)
+				)
+			)
+		)
+		(pad "" np_thru_hole circle
+			(at 0 0)
+			(size 1 1)
+			(drill 1)
+			(layers "*.Mask")
+			(uuid "b0001001-0000-0000-0000-000000000003")
+		)
+	)
+	(footprint ""
+		(layer "F.Cu")
+		(uuid "b0002002-0000-0000-0000-000000000001")
+		(at 128.5 101.5)
+		(attr exclude_from_pos_files exclude_from_bom)
+		(property "Reference" "TH2"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(uuid "b0002002-0000-0000-0000-000000000002")
+			(effects
+				(font
+					(size 0.5 0.5)
+					(thickness 0.08)
+				)
+			)
+		)
+		(pad "" np_thru_hole circle
+			(at 0 0)
+			(size 1 1)
+			(drill 1)
+			(layers "*.Mask")
+			(uuid "b0002002-0000-0000-0000-000000000003")
+		)
+	)
+	(footprint ""
+		(layer "F.Cu")
+		(uuid "b0003003-0000-0000-0000-000000000001")
+		(at 101.5 148.5)
+		(attr exclude_from_pos_files exclude_from_bom)
+		(property "Reference" "TH3"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(uuid "b0003003-0000-0000-0000-000000000002")
+			(effects
+				(font
+					(size 0.5 0.5)
+					(thickness 0.08)
+				)
+			)
+		)
+		(pad "" np_thru_hole circle
+			(at 0 0)
+			(size 1 1)
+			(drill 1)
+			(layers "*.Mask")
+			(uuid "b0003003-0000-0000-0000-000000000003")
+		)
+	)
 	(gr_rect
 		(start 100 100)
 		(end 130 150)

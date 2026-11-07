@@ -151,6 +151,24 @@ def main():
     rect.SetWidth(mm(0.1))
     board.Add(rect)
 
+    # Tooling holes for JLCPCB pick-and-place (3 × 1.0 mm NPTH, three corners)
+    for th_i, (tx, ty) in enumerate([(1.5, 1.5), (28.5, 1.5), (1.5, 48.5)], 1):
+        th = pcbnew.FOOTPRINT(board)
+        th.SetReference(f"TH{th_i}")
+        th.SetPosition(pt(tx, ty))
+        th.SetExcludedFromBOM(True)
+        th.SetExcludedFromPosFiles(True)
+        pad = pcbnew.PAD(th)
+        pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
+        pad.SetAttribute(pcbnew.PAD_ATTRIB_NPTH)
+        pad.SetDrillShape(pcbnew.PAD_DRILL_SHAPE_CIRCLE)
+        pad.SetDrillSize(pcbnew.VECTOR2I(mm(1.0), mm(1.0)))
+        pad.SetSize(pcbnew.VECTOR2I(mm(1.0), mm(1.0)))
+        pad.SetPosition(pt(tx, ty))
+        pad.SetNumber("")
+        th.Add(pad)
+        board.Add(th)
+
     nets = {}
 
     def net(name):
