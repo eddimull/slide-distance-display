@@ -9880,6 +9880,18 @@
 				)
 			)
 		)
+		(property "LCSC" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "2ba7dae1-4dc5-4a02-bacd-fc9c4c5e63e3")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15)
+				)
+			)
+		)
 		(path "/fc69e5e6-61fc-591b-889f-1cad90018f19")
 		(sheetfile "slidepod.kicad_sch")
 		(attr smd)
@@ -10210,6 +10222,18 @@
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "286c0508-f2f1-42c0-8140-3158399d60bc")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "LCSC" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "8994e58f-a69c-4f66-bb91-6f22e68c03d7")
 			(effects
 				(font
 					(size 1.27 1.27)

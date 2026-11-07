@@ -111,10 +111,10 @@ P("SW2", "Switch:SW_Push", "BOOT", "Button_Switch_SMD:SW_Push_1P1T_XKB_TS-1187A"
 # A combined RGB package was dropped: no JLC common-anode part had a pinout we could verify.
 LED0603 = "LED_SMD:LED_0603_1608Metric"
 P("LED1", "Device:LED", "red", LED0603, {"2": "+3V3", "1": "LED_RK"}, "mcu", lcsc="C2286")
-P("LED2", "Device:LED", "green", LED0603, {"2": "+3V3", "1": "LED_GK"}, "mcu",
-  note="JLC Basic 0603 green: pick in parts library")
-P("LED3", "Device:LED", "blue", LED0603, {"2": "+3V3", "1": "LED_BK"}, "mcu",
-  note="JLC Basic 0603 blue: pick in parts library")
+P("LED2", "Device:LED", "green", LED0603, {"2": "+3V3", "1": "LED_GK"}, "mcu", lcsc="C12624",
+  note="KENTO KT-0603G, Extended (no Basic green 0603 at JLC)")
+P("LED3", "Device:LED", "blue", LED0603, {"2": "+3V3", "1": "LED_BK"}, "mcu", lcsc="C2288",
+  note="KENTO KT-0603B, Extended (no Basic blue 0603 at JLC)")
 R("R12", "1k", "LED_RK", "LED_R", "mcu", note="red Vf~2.0 V: ~1.3 mA")
 R("R13", "33", "LED_GK", "LED_G", "mcu")
 R("R14", "33", "LED_BK", "LED_B", "mcu")

@@ -133,7 +133,7 @@ Check live stock and the Basic/Extended label on jlcpcb.com/partdetail/<C#> befo
 | Q1 | AO3401A | C15127 | Basic |
 | D2 | B5819W (CJ) | C8598 | Basic |
 | LED1, D3 | KT-0603R red | C2286 | Basic |
-| LED2 / LED3 | 0603 green / blue | TBD | Pick Basic parts in the JLC library |
+| LED2 / LED3 | KT-0603G green / KT-0603B blue | C12624 / C2288 | Extended (no Basic green or blue 0603 LEDs at JLC) |
 | R, C | 0402 resistors and capacitors (4.7 µF and 10 µF are 0603) | see `LCSC_R0402` / `LCSC_C` in `tools/circuit.py` | Basic |
 
 ## Firmware-facing summary
@@ -173,7 +173,7 @@ connects to. Parts excluded from placement:
 - [x] Board: 30 × 50 mm, 4 layers. Placement, routing, GND/+3V3 planes, stitching.
       **DRC: 0 errors, 0 unconnected, schematic parity clean.**
 - [x] Fab outputs in `fab/`: `slidepod-gerbers.zip` (Gerbers + drill), `slidepod-bom.csv`, `slidepod-cpl.csv`
-- [ ] Pick JLC Basic green (LED2) and blue (LED3) 0603 LEDs; add them to `circuit.py`, then `make fab`
+- [x] LCSC numbers on every BOM line
 - [ ] Recheck the MCP6001, VL53L1X, MCP73831 and switches on JLC
 - [ ] In JLC's assembly preview, check every part's rotation (CPL rotations follow KiCad's zero orientation)
 

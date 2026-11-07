@@ -9381,7 +9381,13 @@
 				(font
 					(size 1.27 1.27))
 				(hide yes)))
-		(property "Note" "JLC Basic 0603 green: pick in parts library"
+		(property "LCSC" "C12624"
+			(at 396.24 152.4 0)
+			(effects
+				(font
+					(size 1.27 1.27))
+				(hide yes)))
+		(property "Note" "KENTO KT-0603G, Extended (no Basic green 0603 at JLC)"
 			(at 396.24 152.4 0)
 			(effects
 				(font
@@ -9427,7 +9433,13 @@
 				(font
 					(size 1.27 1.27))
 				(hide yes)))
-		(property "Note" "JLC Basic 0603 blue: pick in parts library"
+		(property "LCSC" "C2288"
+			(at 434.34 152.4 0)
+			(effects
+				(font
+					(size 1.27 1.27))
+				(hide yes)))
+		(property "Note" "KENTO KT-0603B, Extended (no Basic blue 0603 at JLC)"
 			(at 434.34 152.4 0)
 			(effects
 				(font
