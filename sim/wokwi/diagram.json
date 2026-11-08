@@ -4,18 +4,11 @@
   "editor": "wokwi",
   "parts": [
     {
-      "type": "board-esp32-s3-devkitc-1",
+      "type": "wokwi-esp32-devkit-v1",
       "id": "esp",
       "top": 0,
       "left": 0,
       "attrs": {}
-    },
-    {
-      "type": "wokwi-vl53l0x",
-      "id": "tof",
-      "top": -60,
-      "left": 540,
-      "attrs": { "distance": "200" }
     },
     {
       "type": "wokwi-resistor",
@@ -71,21 +64,15 @@
     }
   ],
   "connections": [
-    ["esp:GND.1",   "tof:GND",    "black",  []],
-    ["esp:3V3",     "tof:VDD",    "red",    []],
-    ["esp:GPIO8",   "tof:SDA",    "blue",   []],
-    ["esp:GPIO9",   "tof:SCL",    "green",  []],
-    ["esp:GPIO5",   "tof:XSHUT",  "orange", []],
-
-    ["esp:GPIO11",  "r_r:1",      "red",    []],
+    ["esp:25",      "r_r:1",      "red",    []],
     ["r_r:2",       "led_r:K",    "red",    []],
     ["led_r:A",     "esp:3V3",    "red",    []],
 
-    ["esp:GPIO12",  "r_g:1",      "green",  []],
+    ["esp:26",      "r_g:1",      "green",  []],
     ["r_g:2",       "led_g:K",    "green",  []],
     ["led_g:A",     "esp:3V3",    "green",  []],
 
-    ["esp:GPIO13",  "r_b:1",      "blue",   []],
+    ["esp:27",      "r_b:1",      "blue",   []],
     ["r_b:2",       "led_b:K",    "blue",   []],
     ["led_b:A",     "esp:3V3",    "blue",   []],
 

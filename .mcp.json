@@ -3,6 +3,13 @@
     "spice": {
       "command": "ltspice-mcp",
       "args": []
+    },
+    "wokwi": {
+      "command": "C:\\Users\\namth\\.local\\bin\\wokwi-cli.exe",
+      "args": ["mcp"],
+      "env": {
+        "WOKWI_CLI_TOKEN": "${WOKWI_CLI_TOKEN}"
+      }
     }
   }
 }

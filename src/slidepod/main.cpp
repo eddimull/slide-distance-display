@@ -6,12 +6,12 @@
  * what the BLE GATT notify will send once NimBLE is wired in).
  *
  * Build targets:
- *   pio run -e slidepod-sim   Wokwi simulation (uses VL53L0X proxy)
+ *   pio run -e slidepod-sim   Wokwi simulation (mock ToF, no I2C)
  *   pio run -e slidepod       Real SlidePod hardware (uses VL53L1X)
  *
- * In Wokwi: use the serial plotter (bottom panel) to watch dist_raw,
- * dist_filt, and position in real time. Drag the VL53L0X distance slider
- * to simulate slide movement.
+ * In Wokwi: the mock ToF sweeps between closed and open positions
+ * automatically (triangle wave). Press BOOT to toggle between sweep
+ * and hold-at-closed.
  */
 
 #include <Arduino.h>
@@ -20,23 +20,21 @@
 
 // ── Sensor library — switched at compile time ────────────────────────────
 #ifdef WOKWI_SIM
-  // Wokwi only ships a wokwi-vl53l0x device; use the VL53L0X lib as proxy.
-  #include <VL53L0X.h>
-  VL53L0X tof;
-  static bool tof_init() {
-    tof.setTimeout(500);
-    return tof.init();
-  }
-  static void tof_start() {
-    tof.setMeasurementTimingBudget(20000);
-    tof.startContinuous();
-  }
+  // Wokwi ESP32 I2C is non-functional — mock the ToF with a triangle wave.
+  static uint16_t mock_dist = 50;
+  static int16_t  mock_step = 2;
+  static bool     mock_sweep = true;
+  static bool tof_init()  { return true; }
+  static void tof_start() {}
   static uint16_t tof_read() {
-    return tof.readRangeContinuousMillimeters();
+    if (mock_sweep) {
+      mock_dist += mock_step;
+      if (mock_dist >= 550) { mock_dist = 550; mock_step = -2; }
+      if (mock_dist <= 50)  { mock_dist = 50;  mock_step =  2; }
+    }
+    return mock_dist;
   }
-  static bool tof_ok() {
-    return !tof.timeoutOccurred();
-  }
+  static bool tof_ok() { return true; }
 #else
   // Real hardware: VL53L1X in Short mode, 20 ms timing budget.
   #include <VL53L1X.h>
@@ -58,15 +56,23 @@
   }
 #endif
 
-// ── Pin assignments (from hardware/README.md) ────────────────────────────
-static constexpr int PIN_SDA       = 8;
-static constexpr int PIN_SCL       = 9;
-static constexpr int PIN_TOF_XSHUT = 5;
-static constexpr int PIN_TOF_INT   = 4;
-static constexpr int PIN_LED_R     = 11;   // active-low: anode → 3V3
-static constexpr int PIN_LED_G     = 12;
-static constexpr int PIN_LED_B     = 13;
-static constexpr int PIN_BOOT      = 0;
+// ── Pin assignments ──────────────────────────────────────────────────────
+#ifdef WOKWI_SIM
+  static constexpr int PIN_LED_R     = 25;
+  static constexpr int PIN_LED_G     = 26;
+  static constexpr int PIN_LED_B     = 27;
+  static constexpr int PIN_BOOT      = 0;
+#else
+  // Real SlidePod hardware (ESP32-S3-MINI-1).
+  static constexpr int PIN_SDA       = 8;
+  static constexpr int PIN_SCL       = 9;
+  static constexpr int PIN_TOF_XSHUT = 5;
+  static constexpr int PIN_TOF_INT   = 4;
+  static constexpr int PIN_LED_R     = 11;
+  static constexpr int PIN_LED_G     = 12;
+  static constexpr int PIN_LED_B     = 13;
+  static constexpr int PIN_BOOT      = 0;
+#endif
 
 // ── Slide geometry (mm) — calibrate with cal_offset / cal_len over BLE ──
 static constexpr float DIST_CLOSED = 50.0f;    // ToF reading at position 0
@@ -89,17 +95,20 @@ void setup() {
   pinMode(PIN_LED_G, OUTPUT);
   pinMode(PIN_LED_B, OUTPUT);
   pinMode(PIN_BOOT, INPUT_PULLUP);
-  pinMode(PIN_TOF_XSHUT, OUTPUT);
 
   setRgb(true, false, false);   // red = booting
 
-  Wire.begin(PIN_SDA, PIN_SCL);
+  Serial.println("# SlidePod booting...");
 
+#ifndef WOKWI_SIM
+  Wire.begin(PIN_SDA, PIN_SCL);
   // Power-cycle the ToF sensor via XSHUT.
+  pinMode(PIN_TOF_XSHUT, OUTPUT);
   digitalWrite(PIN_TOF_XSHUT, LOW);
   delay(10);
   digitalWrite(PIN_TOF_XSHUT, HIGH);
   delay(10);
+#endif
 
   if (!tof_init()) {
     Serial.println("# ERROR: VL53L sensor not found");
@@ -119,6 +128,17 @@ void setup() {
 }
 
 void loop() {
+#ifdef WOKWI_SIM
+  // BOOT button toggles between sweep and hold-at-closed.
+  static bool prev_btn = HIGH;
+  bool btn = digitalRead(PIN_BOOT);
+  if (prev_btn == HIGH && btn == LOW) {
+    mock_sweep = !mock_sweep;
+    if (!mock_sweep) mock_dist = 50;
+  }
+  prev_btn = btn;
+#endif
+
   uint16_t raw = tof_read();
   if (!tof_ok()) {
     Serial.println("# timeout");
