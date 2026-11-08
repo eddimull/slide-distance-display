@@ -24,7 +24,76 @@ class SlideData {
   }
 }
 
-class SlidePodBle {
+abstract class SlidePodSource {
+  Stream<SlideData> get dataStream;
+  Stream<bool> get connectionStream;
+  bool get connected;
+  bool get isMock;
+  Future<void> connectFirst();
+  Future<void> disconnect();
+  void dispose();
+}
+
+// ── Mock source: triangle wave matching firmware sim ─────────────────────
+
+class SlidePodMock implements SlidePodSource {
+  Timer? _timer;
+  int _rawMm = 50;
+  int _step = 2;
+
+  final _dataController = StreamController<SlideData>.broadcast();
+  final _connectionController = StreamController<bool>.broadcast();
+  bool _connected = false;
+
+  @override
+  Stream<SlideData> get dataStream => _dataController.stream;
+  @override
+  Stream<bool> get connectionStream => _connectionController.stream;
+  @override
+  bool get connected => _connected;
+  @override
+  bool get isMock => true;
+
+  @override
+  Future<void> connectFirst() async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    _connected = true;
+    _connectionController.add(true);
+    _timer = Timer.periodic(const Duration(milliseconds: 20), _tick);
+  }
+
+  void _tick(Timer _) {
+    _rawMm += _step;
+    if (_rawMm >= 550) { _rawMm = 550; _step = -2; }
+    if (_rawMm <= 50)  { _rawMm = 50;  _step = 2;  }
+
+    final pos = ((_rawMm - 50) / 500.0).clamp(0.0, 1.0);
+    _dataController.add(SlideData(
+      rawMm: _rawMm,
+      filtMm: _rawMm,
+      position: pos,
+    ));
+  }
+
+  @override
+  Future<void> disconnect() async {
+    _timer?.cancel();
+    _timer = null;
+    _connected = false;
+    _connectionController.add(false);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _dataController.close();
+    _connectionController.close();
+  }
+}
+
+// ── Real BLE source ─────────────────────────────────────────────────────
+
+class SlidePodBle implements SlidePodSource {
   static final _svcUuid = Guid("d5e40001-7537-4463-a441-27f2d3140fab");
   static final _posUuid = Guid("d5e40002-7537-4463-a441-27f2d3140fab");
 
@@ -35,11 +104,16 @@ class SlidePodBle {
   final _dataController = StreamController<SlideData>.broadcast();
   final _connectionController = StreamController<bool>.broadcast();
 
+  @override
   Stream<SlideData> get dataStream => _dataController.stream;
+  @override
   Stream<bool> get connectionStream => _connectionController.stream;
 
   bool _connected = false;
+  @override
   bool get connected => _connected;
+  @override
+  bool get isMock => false;
 
   Future<List<ScanResult>> scan({Duration timeout = const Duration(seconds: 4)}) async {
     final results = <ScanResult>[];
@@ -59,6 +133,13 @@ class SlidePodBle {
     );
     sub.cancel();
     return results;
+  }
+
+  @override
+  Future<void> connectFirst() async {
+    final results = await scan();
+    if (results.isEmpty) throw Exception('No SlidePod found');
+    await connect(results.first.device);
   }
 
   Future<void> connect(BluetoothDevice device) async {
@@ -95,12 +176,14 @@ class SlidePodBle {
     }
   }
 
+  @override
   Future<void> disconnect() async {
     _notifySub?.cancel();
     _notifySub = null;
     await _device?.disconnect();
   }
 
+  @override
   void dispose() {
     _notifySub?.cancel();
     _stateSub?.cancel();

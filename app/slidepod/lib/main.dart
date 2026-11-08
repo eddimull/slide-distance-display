@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'slidepod_ble.dart';
@@ -22,44 +23,84 @@ class SlidePodApp extends StatelessWidget {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final bool autoMock;
+  const HomePage({super.key, this.autoMock = kDebugMode});
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  final _ble = SlidePodBle();
+  late SlidePodSource _source = widget.autoMock ? SlidePodMock() : SlidePodBle();
   SlideData _data = const SlideData(rawMm: 0, filtMm: 0, position: 0);
   bool _scanning = false;
   bool _connected = false;
-  String _status = 'Tap to connect';
+  late String _status = widget.autoMock ? 'Mock mode' : 'Tap to connect';
 
   @override
   void initState() {
     super.initState();
-    _ble.dataStream.listen((d) {
+    _listen();
+    if (widget.autoMock && _source.isMock) {
+      _startMock();
+    }
+  }
+
+  void _listen() {
+    _source.dataStream.listen((d) {
       if (mounted) setState(() => _data = d);
     });
-    _ble.connectionStream.listen((c) {
+    _source.connectionStream.listen((c) {
       if (mounted) {
         setState(() {
           _connected = c;
-          _status = c ? 'Connected' : 'Disconnected';
+          _status = c
+              ? (_source.isMock ? 'Mock connected' : 'Connected')
+              : (_source.isMock ? 'Mock mode' : 'Disconnected');
         });
       }
     });
   }
 
+  Future<void> _startMock() async {
+    setState(() {
+      _scanning = true;
+      _status = 'Starting mock...';
+    });
+    await _source.connectFirst();
+    if (mounted) setState(() => _scanning = false);
+  }
+
+  void _switchSource(bool useMock) {
+    _source.disconnect();
+    _source.dispose();
+    _source = useMock ? SlidePodMock() : SlidePodBle();
+    _data = const SlideData(rawMm: 0, filtMm: 0, position: 0);
+    _connected = false;
+    _status = useMock ? 'Mock mode' : 'Tap to connect';
+    _listen();
+    setState(() {});
+    if (useMock) _startMock();
+  }
+
   @override
   void dispose() {
-    _ble.dispose();
+    _source.dispose();
     super.dispose();
   }
 
   Future<void> _scanAndConnect() async {
+    if (_source.isMock) {
+      if (_connected) {
+        await _source.disconnect();
+      } else {
+        await _startMock();
+      }
+      return;
+    }
+
     if (_connected) {
-      await _ble.disconnect();
+      await (_source as SlidePodBle).disconnect();
       return;
     }
 
@@ -69,7 +110,8 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      final results = await _ble.scan();
+      final ble = _source as SlidePodBle;
+      final results = await ble.scan();
 
       if (results.isEmpty) {
         setState(() {
@@ -81,13 +123,13 @@ class _HomePageState extends State<HomePage> {
 
       if (results.length == 1) {
         setState(() => _status = 'Connecting...');
-        await _ble.connect(results.first.device);
+        await ble.connect(results.first.device);
       } else {
         if (!mounted) return;
         final device = await _showDevicePicker(results);
         if (device != null) {
           setState(() => _status = 'Connecting...');
-          await _ble.connect(device);
+          await ble.connect(device);
         } else {
           setState(() => _status = 'Tap to connect');
         }
@@ -140,7 +182,7 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             children: [
               const SizedBox(height: 24),
-              // Connection button
+              // Connection row
               GestureDetector(
                 onTap: _scanning ? null : _scanAndConnect,
                 child: Row(
@@ -168,6 +210,22 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               ),
+
+              // Debug: mock/BLE toggle
+              if (kDebugMode) ...[
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('BLE', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    Switch(
+                      value: _source.isMock,
+                      onChanged: (v) => _switchSource(v),
+                    ),
+                    const Text('Mock', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
+              ],
 
               const Spacer(),
 
