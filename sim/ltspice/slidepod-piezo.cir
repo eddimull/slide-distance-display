@@ -47,10 +47,11 @@ D1b    GND    OPA_IN BAT54S
 .model BAT54S D(Is=1.5u N=1.1 Rs=5 Vj=0.3 Cjo=10p)
 
 * ── MCP6001 op-amp (Microchip, 1 MHz GBW, rail-to-rail I/O) ───────────
-* UniversalOpamp2 is a behavioural model built into LTspice.
+* UniversalOpAmp2 is a behavioural model built into LTspice.
 * MCP6001 datasheet: GBW=1 MHz, Avol=112 dB, Slew=0.6 V/µs, Iout=20 mA.
-XU5    OPA_IN OPA_FB VCC GND OPA_OUT UniversalOpamp2
+XU5    OPA_IN OPA_FB VCC GND OPA_OUT level2
 + Avol=112 GBW=1Meg Slew=600k Ilimit=20m Rail=0 Rinput=1T Routput=100
+.lib UniversalOpAmp2.lib
 
 * ── Feedback: non-inverting with AC-coupled Rg → band-limited gain ─────
 * Gain = 1 + R23/R25 = 11 at mid-band.
@@ -68,12 +69,13 @@ C16    PIEZO_ADC GND       10n
 
 * ── Analyses ─────────────────────────────────────────────────────────────
 .ac oct 200 1 200k
-.tran 10m
+;.tran 10m
 
 * ── Measurements (shown in SPICE Error Log after .ac run) ──────────────
-.meas AC gain_mid AVG V(PIEZO_ADC) from=200 to=5k
-.meas AC f_low  WHEN V(PIEZO_ADC)=DB(-3) RISE
-.meas AC f_high WHEN V(PIEZO_ADC)=DB(-3) FALL
+.meas AC gain_mid FIND V(PIEZO_ADC) AT 1k
+.meas AC Vmax MAX mag(V(PIEZO_ADC))
+.meas AC f_low  WHEN mag(V(PIEZO_ADC))=Vmax/sqrt(2) CROSS=1
+.meas AC f_high WHEN mag(V(PIEZO_ADC))=Vmax/sqrt(2) CROSS=LAST
 
 .backanno
 .end
