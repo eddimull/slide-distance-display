@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -37,6 +38,16 @@ class _HomePageState extends State<HomePage> {
   bool _connected = false;
   late String _status = widget.autoMock ? 'Mock mode' : 'Tap to connect';
 
+  // Velocity tracking
+  double _velocity = 0;
+  double _prevPosition = 0;
+  DateTime _prevTime = DateTime.now();
+  static const _velocitySmoothing = 0.3;
+
+  // Average speed tracking
+  double _totalDistance = 0;
+  DateTime? _sessionStart;
+
   @override
   void initState() {
     super.initState();
@@ -48,7 +59,19 @@ class _HomePageState extends State<HomePage> {
 
   void _listen() {
     _source.dataStream.listen((d) {
-      if (mounted) setState(() => _data = d);
+      if (!mounted) return;
+      final now = DateTime.now();
+      final dt = now.difference(_prevTime).inMicroseconds / 1e6;
+      if (dt > 0.001) {
+        final delta = (d.position - _prevPosition).abs();
+        final rawVel = delta / dt;
+        _velocity = _velocity * (1 - _velocitySmoothing) + rawVel * _velocitySmoothing;
+        _totalDistance += delta;
+        _sessionStart ??= now;
+      }
+      _prevPosition = d.position;
+      _prevTime = now;
+      setState(() => _data = d);
     });
     _source.connectionStream.listen((c) {
       if (mounted) {
@@ -57,6 +80,11 @@ class _HomePageState extends State<HomePage> {
           _status = c
               ? (_source.isMock ? 'Mock connected' : 'Connected')
               : (_source.isMock ? 'Mock mode' : 'Disconnected');
+          if (!c) {
+            _velocity = 0;
+            _totalDistance = 0;
+            _sessionStart = null;
+          }
         });
       }
     });
@@ -77,6 +105,9 @@ class _HomePageState extends State<HomePage> {
     _source = useMock ? SlidePodMock() : SlidePodBle();
     _data = const SlideData(rawMm: 0, filtMm: 0, position: 0);
     _connected = false;
+    _velocity = 0;
+    _totalDistance = 0;
+    _sessionStart = null;
     _status = useMock ? 'Mock mode' : 'Tap to connect';
     _listen();
     setState(() {});
@@ -174,6 +205,11 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final slideNum = _connected ? _positionToSlide(_data.position) : null;
+    final velocityPosPerSec = _velocity * 7.0;
+    final elapsed = _sessionStart != null
+        ? DateTime.now().difference(_sessionStart!).inMicroseconds / 1e6
+        : 0.0;
+    final avgPosPerSec = elapsed > 0.5 ? (_totalDistance * 7.0) / elapsed : 0.0;
 
     return Scaffold(
       body: SafeArea(
@@ -217,12 +253,14 @@ class _HomePageState extends State<HomePage> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text('BLE', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    const Text('BLE',
+                        style: TextStyle(fontSize: 12, color: Colors.grey)),
                     Switch(
                       value: _source.isMock,
                       onChanged: (v) => _switchSource(v),
                     ),
-                    const Text('Mock', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    const Text('Mock',
+                        style: TextStyle(fontSize: 12, color: Colors.grey)),
                   ],
                 ),
               ],
@@ -233,12 +271,12 @@ class _HomePageState extends State<HomePage> {
               Text(
                 slideNum != null ? '$slideNum' : '-',
                 style: const TextStyle(
-                  fontSize: 160,
+                  fontSize: 120,
                   fontWeight: FontWeight.w200,
                   height: 1,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               Text(
                 slideNum != null ? 'Position' : 'Not connected',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -246,12 +284,48 @@ class _HomePageState extends State<HomePage> {
                     ),
               ),
 
-              const Spacer(),
+              const SizedBox(height: 24),
 
-              // Slide position bar and data
+              // Speedometers
               if (_connected) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    Column(
+                      children: [
+                        SizedBox(
+                          height: 100,
+                          width: 160,
+                          child: _Speedometer(
+                            value: velocityPosPerSec,
+                            maxValue: 5.0,
+                            label: 'Speed',
+                          ),
+                        ),
+                      ],
+                    ),
+                    Column(
+                      children: [
+                        SizedBox(
+                          height: 100,
+                          width: 160,
+                          child: _Speedometer(
+                            value: avgPosPerSec,
+                            maxValue: 5.0,
+                            label: 'Avg',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Slide position bar
                 _SlideBar(position: _data.position),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
+
+                // Raw data
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
@@ -272,6 +346,149 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
+
+// ── Speedometer gauge ───────────────────────────────────────────────────
+
+class _Speedometer extends StatelessWidget {
+  final double value;
+  final double maxValue;
+  final String label;
+
+  const _Speedometer({
+    required this.value,
+    required this.maxValue,
+    this.label = '',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _SpeedometerPainter(
+        value: value.clamp(0, maxValue),
+        maxValue: maxValue,
+        label: label,
+      ),
+    );
+  }
+}
+
+class _SpeedometerPainter extends CustomPainter {
+  final double value;
+  final double maxValue;
+  final String label;
+
+  _SpeedometerPainter({
+    required this.value,
+    required this.maxValue,
+    this.label = '',
+  });
+
+  static const _green = Color(0xFF4CAF50);
+  static const _amber = Color(0xFFFFC107);
+  static const _deepOrange = Color(0xFFFF5722);
+
+  Color _colorAt(double t) {
+    if (t < 0.5) return Color.lerp(_green, _amber, t * 2)!;
+    return Color.lerp(_amber, _deepOrange, (t - 0.5) * 2)!;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.width / 220;
+    final center = Offset(size.width / 2, size.height - 8 * scale);
+    final radius = size.width / 2 - 14 * scale;
+    const startAngle = math.pi;
+    const sweepAngle = math.pi;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final arcWidth = 10 * scale;
+
+    canvas.drawArc(
+      rect, startAngle, sweepAngle, false,
+      Paint()
+        ..color = Colors.grey.shade800
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = arcWidth
+        ..strokeCap = StrokeCap.round,
+    );
+
+    final fraction = (value / maxValue).clamp(0.0, 1.0);
+    if (fraction > 0.005) {
+      const segments = 40;
+      final filledSegments = (fraction * segments).ceil();
+      final segSweep = sweepAngle / segments;
+      for (var i = 0; i < filledSegments; i++) {
+        final t = i / segments;
+        final isLast = i == filledSegments - 1;
+        final thisSweep = isLast
+            ? (fraction * sweepAngle) - (i * segSweep)
+            : segSweep + 0.01;
+        canvas.drawArc(
+          rect, startAngle + i * segSweep, thisSweep, false,
+          Paint()
+            ..color = _colorAt(t)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = arcWidth
+            ..strokeCap = (i == 0 || isLast) ? StrokeCap.round : StrokeCap.butt,
+        );
+      }
+    }
+
+    final tickPaint = Paint()
+      ..color = Colors.grey.shade600
+      ..strokeWidth = 1.0 * scale;
+    for (var i = 0; i <= 5; i++) {
+      final angle = startAngle + (sweepAngle * i / 5);
+      final dir = Offset(math.cos(angle), math.sin(angle));
+      canvas.drawLine(
+        center + dir * (radius + 4 * scale),
+        center + dir * (radius + 10 * scale),
+        tickPaint,
+      );
+    }
+
+    final needleAngle = startAngle + sweepAngle * fraction;
+    final needleTip = center +
+        Offset(math.cos(needleAngle), math.sin(needleAngle)) * (radius - 6 * scale);
+    canvas.drawLine(
+      center, needleTip,
+      Paint()
+        ..color = Colors.white
+        ..strokeWidth = 2.0 * scale
+        ..strokeCap = StrokeCap.round,
+    );
+
+    canvas.drawCircle(center, 4 * scale, Paint()..color = Colors.white);
+    canvas.drawCircle(center, 2.5 * scale, Paint()..color = Colors.grey.shade900);
+
+    final valueTp = TextPainter(
+      text: TextSpan(
+        text: value.toStringAsFixed(1),
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 16 * scale,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    valueTp.paint(canvas, Offset(center.dx - valueTp.width / 2, center.dy - 28 * scale));
+
+    final unitTp = TextPainter(
+      text: TextSpan(
+        text: label.isEmpty ? 'pos/s' : label,
+        style: TextStyle(color: Colors.grey.shade500, fontSize: 9 * scale),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    unitTp.paint(canvas, Offset(center.dx - unitTp.width / 2, center.dy - 14 * scale));
+  }
+
+  @override
+  bool shouldRepaint(_SpeedometerPainter old) =>
+      old.value != value || old.maxValue != maxValue || old.label != label;
+}
+
+// ── Slide bar ───────────────────────────────────────────────────────────
 
 class _SlideBar extends StatelessWidget {
   final double position;
@@ -315,6 +532,8 @@ class _SlideBar extends StatelessWidget {
     );
   }
 }
+
+// ── Data chip ───────────────────────────────────────────────────────────
 
 class _DataChip extends StatelessWidget {
   final String label;

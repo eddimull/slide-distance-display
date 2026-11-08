@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
@@ -38,8 +39,11 @@ abstract class SlidePodSource {
 
 class SlidePodMock implements SlidePodSource {
   Timer? _timer;
-  int _rawMm = 50;
-  int _step = 2;
+  final _rng = Random();
+  double _rawMm = 300;
+  double _targetMm = 300;
+  double _speed = 4;
+  int _holdTicks = 0;
 
   final _dataController = StreamController<SlideData>.broadcast();
   final _connectionController = StreamController<bool>.broadcast();
@@ -59,18 +63,35 @@ class SlidePodMock implements SlidePodSource {
     await Future.delayed(const Duration(milliseconds: 300));
     _connected = true;
     _connectionController.add(true);
+    _pickNewTarget();
     _timer = Timer.periodic(const Duration(milliseconds: 20), _tick);
   }
 
-  void _tick(Timer _) {
-    _rawMm += _step;
-    if (_rawMm >= 550) { _rawMm = 550; _step = -2; }
-    if (_rawMm <= 50)  { _rawMm = 50;  _step = 2;  }
+  void _pickNewTarget() {
+    _targetMm = 50 + _rng.nextDouble() * 500;
+    _speed = 1 + _rng.nextDouble() * 9;
+    _holdTicks = 0;
+  }
 
-    final pos = ((_rawMm - 50) / 500.0).clamp(0.0, 1.0);
+  void _tick(Timer _) {
+    if (_holdTicks > 0) {
+      _holdTicks--;
+      if (_holdTicks == 0) _pickNewTarget();
+    } else {
+      final dist = _targetMm - _rawMm;
+      if (dist.abs() < _speed) {
+        _rawMm = _targetMm;
+        _holdTicks = 5 + _rng.nextInt(40);
+      } else {
+        _rawMm += dist.sign * _speed;
+      }
+    }
+
+    final mm = _rawMm.round().clamp(50, 550);
+    final pos = ((mm - 50) / 500.0).clamp(0.0, 1.0);
     _dataController.add(SlideData(
-      rawMm: _rawMm,
-      filtMm: _rawMm,
+      rawMm: mm,
+      filtMm: mm,
       position: pos,
     ));
   }
