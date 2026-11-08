@@ -130,7 +130,7 @@ void setup() {
 void loop() {
 #ifdef WOKWI_SIM
   // BOOT button toggles between sweep and hold-at-closed.
-  static bool prev_btn = HIGH;
+  static bool prev_btn = LOW;
   bool btn = digitalRead(PIN_BOOT);
   if (prev_btn == HIGH && btn == LOW) {
     mock_sweep = !mock_sweep;
