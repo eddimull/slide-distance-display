@@ -1,1 +1,7 @@
 .pio
+
+# LTspice simulation outputs
+sim/ltspice/*.raw
+sim/ltspice/*.log
+sim/ltspice/*.db
+sim/ltspice/*.op.raw
