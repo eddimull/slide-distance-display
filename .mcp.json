@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "spice": {
+      "command": "ltspice-mcp",
+      "args": []
+    }
+  }
+}
