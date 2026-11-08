@@ -44,9 +44,9 @@ class _HomePageState extends State<HomePage> {
   DateTime _prevTime = DateTime.now();
   static const _velocitySmoothing = 0.3;
 
-  // Average speed tracking
+  // Average speed tracking (only counts time when moving > 0.5 pos/s)
   double _totalDistance = 0;
-  DateTime? _sessionStart;
+  double _activeSeconds = 0;
 
   @override
   void initState() {
@@ -66,8 +66,10 @@ class _HomePageState extends State<HomePage> {
         final delta = (d.position - _prevPosition).abs();
         final rawVel = delta / dt;
         _velocity = _velocity * (1 - _velocitySmoothing) + rawVel * _velocitySmoothing;
-        _totalDistance += delta;
-        _sessionStart ??= now;
+        if (_velocity * 7.0 >= 0.5) {
+          _totalDistance += delta;
+          _activeSeconds += dt;
+        }
       }
       _prevPosition = d.position;
       _prevTime = now;
@@ -83,7 +85,7 @@ class _HomePageState extends State<HomePage> {
           if (!c) {
             _velocity = 0;
             _totalDistance = 0;
-            _sessionStart = null;
+            _activeSeconds = 0;
           }
         });
       }
@@ -107,7 +109,7 @@ class _HomePageState extends State<HomePage> {
     _connected = false;
     _velocity = 0;
     _totalDistance = 0;
-    _sessionStart = null;
+    _activeSeconds = 0;
     _status = useMock ? 'Mock mode' : 'Tap to connect';
     _listen();
     setState(() {});
@@ -206,10 +208,9 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final slideNum = _connected ? _positionToSlide(_data.position) : null;
     final velocityPosPerSec = _velocity * 7.0;
-    final elapsed = _sessionStart != null
-        ? DateTime.now().difference(_sessionStart!).inMicroseconds / 1e6
+    final avgPosPerSec = _activeSeconds > 0.5
+        ? (_totalDistance * 7.0) / _activeSeconds
         : 0.0;
-    final avgPosPerSec = elapsed > 0.5 ? (_totalDistance * 7.0) / elapsed : 0.0;
 
     return Scaffold(
       body: SafeArea(
