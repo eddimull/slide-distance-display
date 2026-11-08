@@ -1,17 +1,16 @@
 /*
- * SlidePod rev 0.1 — firmware skeleton
+ * SlidePod rev 0.1 — trombone slide position sensor
  *
- * Reads VL53L1X distance at 50 Hz, applies a Kalman filter, maps it to a
- * trombone slide position (0.0–1.0), and outputs CSV on Serial (mirroring
- * what the BLE GATT notify will send once NimBLE is wired in).
+ * Reads VL53L1X distance at 50 Hz, applies a Kalman filter, maps to
+ * slide position (0.0–1.0), and broadcasts via BLE GATT notify.
+ * Serial CSV output mirrors the BLE payload for debugging.
+ *
+ * BLE service: GATT notify, 6-byte payload (raw_mm + filt_mm + pos).
+ * Advertises as "SlidePod". Connect with any BLE central (phone/laptop).
  *
  * Build targets:
- *   pio run -e slidepod-sim   Wokwi simulation (mock ToF, no I2C)
- *   pio run -e slidepod       Real SlidePod hardware (uses VL53L1X)
- *
- * In Wokwi: the mock ToF sweeps between closed and open positions
- * automatically (triangle wave). Press BOOT to toggle between sweep
- * and hold-at-closed.
+ *   pio run -e slidepod-sim   Wokwi simulation (mock ToF, no BLE)
+ *   pio run -e slidepod       Real hardware (VL53L1X + NimBLE)
  */
 
 #include <Arduino.h>
@@ -74,6 +73,49 @@
   static constexpr int PIN_BOOT      = 0;
 #endif
 
+// ── BLE (real hardware only — Wokwi has no BLE stack) ───────────────────
+#ifndef WOKWI_SIM
+#include <NimBLEDevice.h>
+
+#define SLIDEPOD_SVC_UUID  "d5e40001-7537-4463-a441-27f2d3140fab"
+#define SLIDEPOD_POS_UUID  "d5e40002-7537-4463-a441-27f2d3140fab"
+
+static NimBLECharacteristic* posChr = nullptr;
+
+static void ble_init() {
+  NimBLEDevice::init("SlidePod");
+
+  auto* srv = NimBLEDevice::createServer();
+  srv->advertiseOnDisconnect(true);
+
+  auto* svc = srv->createService(SLIDEPOD_SVC_UUID);
+  posChr = svc->createCharacteristic(
+    SLIDEPOD_POS_UUID,
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
+  );
+  svc->start();
+
+  auto* adv = NimBLEDevice::getAdvertising();
+  adv->addServiceUUID(SLIDEPOD_SVC_UUID);
+  adv->setScanResponse(true);
+  adv->start();
+}
+
+// 6-byte LE payload: raw_mm(u16) + filt_mm(u16) + position(u16, 0–10000)
+static void ble_notify(uint16_t raw, uint16_t filt, uint16_t pos10k) {
+  if (!posChr || !posChr->getSubscribedCount()) return;
+  uint8_t buf[6];
+  buf[0] = raw;       buf[1] = raw >> 8;
+  buf[2] = filt;      buf[3] = filt >> 8;
+  buf[4] = pos10k;    buf[5] = pos10k >> 8;
+  posChr->setValue(buf, sizeof(buf));
+  posChr->notify();
+}
+#else
+static void ble_init() {}
+static void ble_notify(uint16_t, uint16_t, uint16_t) {}
+#endif
+
 // ── Slide geometry (mm) — calibrate with cal_offset / cal_len over BLE ──
 static constexpr float DIST_CLOSED = 50.0f;    // ToF reading at position 0
 static constexpr float DIST_OPEN   = 550.0f;   // ToF reading at position 7
@@ -122,6 +164,8 @@ void setup() {
 
   tof_start();
 
+  ble_init();
+
   setRgb(false, true, false);   // green = ready
   Serial.println("# SlidePod ready");
   Serial.println("# dist_raw_mm,dist_filt_mm,position");
@@ -156,8 +200,8 @@ void loop() {
   else
     setRgb(false, true, false);
 
-  // CSV output — mirrors the payload that BLE GATT notify will send.
-  // Format: raw_mm, filtered_mm, position (0.000–1.000)
+  ble_notify(raw, (uint16_t)filt, (uint16_t)(pos * 10000.0f));
+
   Serial.print(raw);
   Serial.print(",");
   Serial.print(filt, 1);
