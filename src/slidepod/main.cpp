@@ -5,6 +5,10 @@
  * slide position (0.0–1.0), and broadcasts via BLE GATT notify.
  * Serial CSV output mirrors the BLE payload for debugging.
  *
+ * Auto-off: after SLIDEPOD_AUTO_OFF_MIN minutes (default 10) with no slide movement
+ * and no BLE connection, the ToF is stopped and the ESP32 enters deep sleep.
+ * Press BOOT to wake (the firmware restarts from setup()).
+ *
  * BLE service: GATT notify, 6-byte payload (raw_mm + filt_mm + pos).
  * Advertises as "SlidePod". Connect with any BLE central (phone/laptop).
  *
@@ -15,6 +19,8 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <driver/rtc_io.h>
+#include <esp_sleep.h>
 #include "SimpleKalmanFilter.h"
 
 // ── Sensor library — switched at compile time ────────────────────────────
@@ -34,6 +40,7 @@
     return mock_dist;
   }
   static bool tof_ok() { return true; }
+  static void tof_stop() {}
 #else
   // Real hardware: VL53L1X in Short mode, 20 ms timing budget.
   #include <VL53L1X.h>
@@ -52,6 +59,11 @@
   }
   static bool tof_ok() {
     return tof.ranging_data.range_status == VL53L1X::RangeValid;
+  }
+  // Stop ranging: the sensor drops to software standby (a few µA). XSHUT is left
+  // high on purpose. Holding it low would sink ~330 µA through its 10k pull-up.
+  static void tof_stop() {
+    tof.stopContinuous();
   }
 #endif
 
@@ -81,6 +93,11 @@
 #define SLIDEPOD_POS_UUID  "d5e40002-7537-4463-a441-27f2d3140fab"
 
 static NimBLECharacteristic* posChr = nullptr;
+
+static bool ble_connected() {
+  NimBLEServer* srv = NimBLEDevice::getServer();
+  return srv && srv->getConnectedCount() > 0;
+}
 
 static void ble_init() {
   NimBLEDevice::init("SlidePod");
@@ -114,6 +131,7 @@ static void ble_notify(uint16_t raw, uint16_t filt, uint16_t pos10k) {
 #else
 static void ble_init() {}
 static void ble_notify(uint16_t, uint16_t, uint16_t) {}
+static bool ble_connected() { return false; }
 #endif
 
 // ── Slide geometry (mm) — calibrate with cal_offset / cal_len over BLE ──
@@ -130,6 +148,55 @@ static void setRgb(bool r, bool g, bool b) {
   digitalWrite(PIN_LED_B, b ? LOW : HIGH);
 }
 
+// ── Auto-off ─────────────────────────────────────────────────────────────
+#ifndef SLIDEPOD_AUTO_OFF_MIN
+#define SLIDEPOD_AUTO_OFF_MIN 10
+#endif
+static constexpr uint32_t AUTO_OFF_MS = SLIDEPOD_AUTO_OFF_MIN * 60UL * 1000UL;
+static constexpr float    MOVE_MM     = 15.0f;   // smaller changes count as "not moving"
+
+static uint32_t last_activity_ms = 0;
+static float    activity_anchor_mm = -1.0f;      // filtered distance at the last activity
+
+static void go_to_sleep() {
+  Serial.printf("# auto-off: idle %d min, sleeping. Press BOOT to wake.\n",
+                SLIDEPOD_AUTO_OFF_MIN);
+
+  tof_stop();
+
+  // Three blue blinks so it's clear the pod turned itself off.
+  for (int i = 0; i < 3; i++) {
+    setRgb(false, false, true);
+    delay(150);
+    setRgb(false, false, false);
+    delay(150);
+  }
+  // High-Z the LED pins so nothing can sink current through the LEDs while asleep.
+  pinMode(PIN_LED_R, INPUT);
+  pinMode(PIN_LED_G, INPUT);
+  pinMode(PIN_LED_B, INPUT);
+
+  // Don't wake instantly if BOOT happens to be held right now.
+  while (digitalRead(PIN_BOOT) == LOW) delay(10);
+
+  rtc_gpio_pullup_en((gpio_num_t)PIN_BOOT);      // board also has a 10k pull-up (R11)
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BOOT, 0);
+  Serial.flush();
+  esp_deep_sleep_start();                        // does not return; wake = restart
+}
+
+// Call once per loop with the filtered distance; pass -1 when there was no valid reading.
+static void auto_off_tick(float filt_mm) {
+  uint32_t now = millis();
+  bool moved = filt_mm >= 0.0f &&
+               (activity_anchor_mm < 0.0f || fabsf(filt_mm - activity_anchor_mm) > MOVE_MM);
+  if (moved || ble_connected()) {
+    if (filt_mm >= 0.0f) activity_anchor_mm = filt_mm;
+    last_activity_ms = now;
+  }
+  if (now - last_activity_ms > AUTO_OFF_MS) go_to_sleep();
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -141,6 +208,8 @@ void setup() {
   setRgb(true, false, false);   // red = booting
 
   Serial.println("# SlidePod booting...");
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0)
+    Serial.println("# woke from auto-off (BOOT pressed)");
 
 #ifndef WOKWI_SIM
   Wire.begin(PIN_SDA, PIN_SCL);
@@ -167,6 +236,7 @@ void setup() {
   ble_init();
 
   setRgb(false, true, false);   // green = ready
+  last_activity_ms = millis();
   Serial.println("# SlidePod ready");
   Serial.println("# dist_raw_mm,dist_filt_mm,position");
 }
@@ -186,10 +256,12 @@ void loop() {
   uint16_t raw = tof_read();
   if (!tof_ok()) {
     Serial.println("# timeout");
+    auto_off_tick(-1.0f);
     return;
   }
 
   float filt = kalman.updateEstimate((float)raw);
+  auto_off_tick(filt);
   float pos  = constrain(
     (filt - DIST_CLOSED) / (DIST_OPEN - DIST_CLOSED),
     0.0f, 1.0f);
