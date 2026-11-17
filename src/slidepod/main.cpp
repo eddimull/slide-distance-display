@@ -3,9 +3,11 @@
  *
  * Reads VL53L1X distance at 50 Hz, applies a Kalman filter, maps to
  * slide position (0.0–1.0), and broadcasts via BLE GATT notify.
+ * A piezo contact pickup on the slide is sampled at 16 kHz (ADC DMA) and
+ * run through YIN pitch detection every 20 ms.
  * Serial CSV output mirrors the BLE payload for debugging.
  *
- * BLE service: GATT notify, 6-byte payload (raw_mm + filt_mm + pos).
+ * BLE service: GATT notify, 8-byte payload (raw_mm + filt_mm + pos + pitch).
  * Advertises as "SlidePod". Connect with any BLE central (phone/laptop).
  *
  * Build targets:
@@ -16,6 +18,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include "SimpleKalmanFilter.h"
+#include "pitch_yin.h"
 
 // ── Sensor library — switched at compile time ────────────────────────────
 #ifdef WOKWI_SIM
@@ -71,6 +74,81 @@
   static constexpr int PIN_LED_G     = 12;
   static constexpr int PIN_LED_B     = 13;
   static constexpr int PIN_BOOT      = 0;
+  // PIEZO_ADC is GPIO1 = ADC1_CH0 (hard-wired in the DMA config below).
+#endif
+
+// ── Piezo pitch detection ────────────────────────────────────────────────
+// Written by the piezo task, read by loop(). 32-bit aligned floats are
+// atomic on Xtensa, so no lock needed for a single latest value.
+static volatile float g_pitchHz  = 0;   // 0 = no clear pitch
+static volatile float g_piezoRms = 0;   // ADC counts, for tuning amp gain
+
+#ifndef WOKWI_SIM
+#include <driver/adc.h>
+
+static PitchYin yin;  // ~7 KB of buffers; global, not on the task stack
+
+static void piezo_task(void*) {
+  adc_digi_init_config_t init = {};
+  init.max_store_buf_size = 4096;   // ~64 ms of slack at 16 kHz
+  init.conv_num_each_intr = 256;    // bytes per DMA interrupt (64 samples)
+  init.adc1_chan_mask     = BIT(0); // ADC1_CH0 = GPIO1
+  init.adc2_chan_mask     = 0;
+
+  adc_digi_pattern_config_t pat = {};
+  pat.atten     = ADC_ATTEN_DB_11;  // ~0–3.1 V, amp output is mid-rail biased
+  pat.channel   = ADC1_CHANNEL_0;
+  pat.unit      = 0;                // ADC1
+  pat.bit_width = SOC_ADC_DIGI_MAX_BITWIDTH;
+
+  adc_digi_configuration_t cfg = {};
+  cfg.conv_limit_en  = false;
+  cfg.conv_limit_num = 250;
+  cfg.pattern_num    = 1;
+  cfg.adc_pattern    = &pat;
+  cfg.sample_freq_hz = (uint32_t)PitchYin::kSampleRate;
+  cfg.conv_mode      = ADC_CONV_SINGLE_UNIT_1;
+  cfg.format         = ADC_DIGI_OUTPUT_FORMAT_TYPE2;
+
+  esp_err_t err = adc_digi_initialize(&init);
+  if (err == ESP_OK) err = adc_digi_controller_configure(&cfg);
+  if (err == ESP_OK) err = adc_digi_start();
+  if (err != ESP_OK) {
+    Serial.printf("# ERROR: piezo ADC DMA init failed (%d)\n", err);
+    vTaskDelete(nullptr);
+    return;
+  }
+
+  static constexpr int kHop = (int)(PitchYin::kSampleRate / 50);  // 20 ms
+  uint8_t buf[256];
+  int sinceHop = 0;
+  for (;;) {
+    uint32_t n = 0;
+    err = adc_digi_read_bytes(buf, sizeof(buf), &n, 100);
+    // INVALID_STATE = driver buffer overflowed (we fell behind); the bytes
+    // returned are still good, so keep going.
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) continue;
+    for (uint32_t i = 0; i + sizeof(adc_digi_output_data_t) <= n;
+         i += sizeof(adc_digi_output_data_t)) {
+      const auto* d = reinterpret_cast<const adc_digi_output_data_t*>(&buf[i]);
+      if (d->type2.unit != 0 || d->type2.channel != 0) continue;
+      yin.push((float)d->type2.data);
+      if (++sinceHop >= kHop) {
+        sinceHop = 0;
+        g_pitchHz  = yin.detect();
+        g_piezoRms = yin.rms();
+      }
+    }
+  }
+}
+
+static void piezo_init() {
+  // Core 1 alongside loop(), higher priority so sampling never starves;
+  // a detect() pass is ~2 ms per 20 ms hop. NimBLE's host runs on core 0.
+  xTaskCreatePinnedToCore(piezo_task, "piezo", 4096, nullptr, 2, nullptr, 1);
+}
+#else
+static void piezo_init() {}  // Wokwi: no ADC DMA; pitch stays 0
 #endif
 
 // ── BLE (real hardware only — Wokwi has no BLE stack) ───────────────────
@@ -101,19 +179,22 @@ static void ble_init() {
   adv->start();
 }
 
-// 6-byte LE payload: raw_mm(u16) + filt_mm(u16) + position(u16, 0–10000)
-static void ble_notify(uint16_t raw, uint16_t filt, uint16_t pos10k) {
+// 8-byte LE payload: raw_mm(u16) + filt_mm(u16) + position(u16, 0–10000)
+//                    + pitch(u16, 0.1 Hz units, 0 = none)
+static void ble_notify(uint16_t raw, uint16_t filt, uint16_t pos10k,
+                       uint16_t pitch10) {
   if (!posChr || !posChr->getSubscribedCount()) return;
-  uint8_t buf[6];
+  uint8_t buf[8];
   buf[0] = raw;       buf[1] = raw >> 8;
   buf[2] = filt;      buf[3] = filt >> 8;
   buf[4] = pos10k;    buf[5] = pos10k >> 8;
+  buf[6] = pitch10;   buf[7] = pitch10 >> 8;
   posChr->setValue(buf, sizeof(buf));
   posChr->notify();
 }
 #else
 static void ble_init() {}
-static void ble_notify(uint16_t, uint16_t, uint16_t) {}
+static void ble_notify(uint16_t, uint16_t, uint16_t, uint16_t) {}
 #endif
 
 // ── Slide geometry (mm) — calibrate with cal_offset / cal_len over BLE ──
@@ -164,11 +245,12 @@ void setup() {
 
   tof_start();
 
+  piezo_init();
   ble_init();
 
   setRgb(false, true, false);   // green = ready
   Serial.println("# SlidePod ready");
-  Serial.println("# dist_raw_mm,dist_filt_mm,position");
+  Serial.println("# dist_raw_mm,dist_filt_mm,position,pitch_hz,piezo_rms");
 }
 
 void loop() {
@@ -200,13 +282,19 @@ void loop() {
   else
     setRgb(false, true, false);
 
-  ble_notify(raw, (uint16_t)filt, (uint16_t)(pos * 10000.0f));
+  const float pitch = g_pitchHz;
+  ble_notify(raw, (uint16_t)filt, (uint16_t)(pos * 10000.0f),
+             (uint16_t)(pitch * 10.0f + 0.5f));
 
   Serial.print(raw);
   Serial.print(",");
   Serial.print(filt, 1);
   Serial.print(",");
-  Serial.println(pos, 3);
+  Serial.print(pos, 3);
+  Serial.print(",");
+  Serial.print(pitch, 1);
+  Serial.print(",");
+  Serial.println(g_piezoRms, 1);
 
   delay(20);  // 50 Hz
 }

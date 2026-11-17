@@ -8,19 +8,32 @@ class SlideData {
   final int filtMm;
   final double position;
 
+  /// Pitch from the pod's piezo pickup, or null if silent / unclear.
+  final double? pitchHz;
+
+  /// True if the firmware sends pitch at all (8-byte payload). Older
+  /// firmware sends 6 bytes.
+  final bool hasPiezo;
+
   const SlideData({
     required this.rawMm,
     required this.filtMm,
     required this.position,
+    this.pitchHz,
+    this.hasPiezo = false,
   });
 
   static SlideData fromBytes(List<int> bytes) {
     if (bytes.length < 6) return const SlideData(rawMm: 0, filtMm: 0, position: 0);
     final data = ByteData.sublistView(Uint8List.fromList(bytes));
+    final hasPiezo = bytes.length >= 8;
+    final pitch10 = hasPiezo ? data.getUint16(6, Endian.little) : 0;
     return SlideData(
       rawMm: data.getUint16(0, Endian.little),
       filtMm: data.getUint16(2, Endian.little),
       position: data.getUint16(4, Endian.little) / 10000.0,
+      pitchHz: pitch10 > 0 ? pitch10 / 10.0 : null,
+      hasPiezo: hasPiezo,
     );
   }
 }

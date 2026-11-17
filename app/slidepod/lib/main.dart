@@ -109,6 +109,8 @@ class _HomePageState extends State<HomePage> {
         rawMm: raw.rawMm,
         filtMm: raw.filtMm,
         position: _cal.positionFromMm(raw.filtMm.toDouble()),
+        pitchHz: raw.pitchHz,
+        hasPiezo: raw.hasPiezo,
       );
       final now = DateTime.now();
       final dt = now.difference(_prevTime).inMicroseconds / 1e6;
@@ -144,7 +146,7 @@ class _HomePageState extends State<HomePage> {
       // Pitch → exact slide extension. While the slide is near-still, also
       // feed it to the calibrator (when moving, the filtered mm lags).
       double? pitchPos;
-      final freq = _detectedFreq;
+      final freq = d.pitchHz ?? _detectedFreq;
       if (freq != null && freq > 30) {
         final still = _velocity * 6.0 < 0.5;
         final hit = still
@@ -330,6 +332,15 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// Pitch to use: the pod's piezo (immune to room noise) when it hears
+  /// something, otherwise this device's mic (web build only for now).
+  double? get _freq => _data.pitchHz ?? _detectedFreq;
+  String? get _freqSource => _data.pitchHz != null
+      ? 'piezo'
+      : _detectedFreq != null
+          ? 'mic'
+          : null;
+
   int _positionToSlide(double pos) {
     // pos 0.0 = 1st position, 1.0 = 7th → six intervals, not seven.
     return (1 + (pos * 6.0).round()).clamp(1, 7);
@@ -346,9 +357,10 @@ class _HomePageState extends State<HomePage> {
     // Find active note for tuner display
     ChartNote? activeNote;
     double? activeCents;
-    if (_connected && _detectedFreq != null && _detectedFreq! > 30) {
+    final freq = _freq;
+    if (_connected && freq != null && freq > 30) {
       final slide = slideNum ?? 1;
-      final (note, c) = TromboneChart.closestAt(slide, _detectedFreq!);
+      final (note, c) = TromboneChart.closestAt(slide, freq);
       if (c.abs() < 100 && note.partial >= 2) {
         activeNote = note;
         activeCents = c;
@@ -502,7 +514,8 @@ class _HomePageState extends State<HomePage> {
                         slidePosition: slideNum ?? 1,
                         activeNote: activeNote,
                         cents: activeCents,
-                        freq: _detectedFreq,
+                        freq: _freq,
+                        freqSource: _freqSource,
                         micActive: _micActive || _source.isMock,
                         isMock: _source.isMock,
                         onMicToggle: _toggleMic,
@@ -758,6 +771,7 @@ class _CompactTuner extends StatelessWidget {
   final ChartNote? activeNote;
   final double? cents;
   final double? freq;
+  final String? freqSource; // 'piezo' / 'mic'
   final bool micActive;
   final bool isMock;
   final VoidCallback onMicToggle;
@@ -767,6 +781,7 @@ class _CompactTuner extends StatelessWidget {
     required this.activeNote,
     required this.cents,
     required this.freq,
+    required this.freqSource,
     required this.micActive,
     required this.isMock,
     required this.onMicToggle,
@@ -810,7 +825,10 @@ class _CompactTuner extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    hasNote ? '${freq?.toStringAsFixed(1)} Hz' : '',
+                    hasNote
+                        ? '${freq?.toStringAsFixed(1)} Hz'
+                            '${freqSource == 'piezo' ? ' ·pz' : ''}'
+                        : '',
                     style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
                   ),
                 ],
