@@ -160,6 +160,21 @@ static void piezo_init() {}  // Wokwi: no ADC DMA; pitch stays 0
 
 static NimBLECharacteristic* posChr = nullptr;
 
+// Ask for the fastest BLE connection interval (7.5 ms) once the phone
+// subscribes. Android otherwise settles on 45 ms ("balanced") right after
+// service discovery, which adds up to 45 ms (avg ~22 ms) before each
+// notify goes out. Requesting at subscribe time lands after Android's own
+// update, so it isn't overridden. (iOS rejects < 15 ms and keeps its own.)
+class FastConnOnSubscribe : public NimBLECharacteristicCallbacks {
+  void onSubscribe(NimBLECharacteristic*, ble_gap_conn_desc* desc,
+                   uint16_t subValue) override {
+    if (!subValue) return;
+    // Units: interval 1.25 ms (6 = 7.5 ms), timeout 10 ms (200 = 2 s).
+    NimBLEDevice::getServer()->updateConnParams(desc->conn_handle, 6, 6, 0, 200);
+  }
+};
+static FastConnOnSubscribe fastConnCb;
+
 static void ble_init() {
   NimBLEDevice::init("SlidePod");
 
@@ -171,6 +186,7 @@ static void ble_init() {
     SLIDEPOD_POS_UUID,
     NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
   );
+  posChr->setCallbacks(&fastConnCb);
   svc->start();
 
   auto* adv = NimBLEDevice::getAdvertising();
