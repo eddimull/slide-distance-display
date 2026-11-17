@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'one_euro.dart';
 import 'pitch_detector.dart';
 import 'slide_calibration.dart';
 import 'slidepod_ble.dart';
@@ -73,6 +74,8 @@ class _HomePageState extends State<HomePage> {
 
   // Maps ToF mm → slide position, auto-fitted from detected pitch.
   final SlideCalibration _cal = SlideCalibration();
+  // Smoothing of the raw ToF reading (the pod sends it unfiltered).
+  final OneEuroFilter _smooth = OneEuroFilter();
   // Mock mode only: the "real" slide geometry the mock pitch is generated
   // from, deliberately different from the default so calibration has work
   // to do.
@@ -103,12 +106,13 @@ class _HomePageState extends State<HomePage> {
   void _listen() {
     _source.dataStream.listen((raw) {
       if (!mounted) return;
-      // Position comes from the calibrated mm mapping, not the firmware's
-      // linear guess.
+      // Smooth the raw reading here (the pod sends it unfiltered), then map
+      // through the calibrated geometry rather than the firmware's guess.
+      final filt = _smooth.update(raw.rawMm.toDouble(), DateTime.now());
       final d = SlideData(
         rawMm: raw.rawMm,
-        filtMm: raw.filtMm,
-        position: _cal.positionFromMm(raw.filtMm.toDouble()),
+        filtMm: filt.round(),
+        position: _cal.positionFromMm(filt),
         pitchHz: raw.pitchHz,
         hasPiezo: raw.hasPiezo,
       );
@@ -135,7 +139,7 @@ class _HomePageState extends State<HomePage> {
         }
         // Pitch follows the slide's true (hidden) geometry, on the harmonic
         // series, with ±10 cents of lipping noise.
-        final x = (d.filtMm - _mockTrueA) / _mockTrueB;
+        final x = (filt - _mockTrueA) / _mockTrueB;
         final semis = 12 * math.log(1 + x) / math.ln2;
         final centsOff = (_mockRng.nextDouble() - 0.5) * 20;
         _detectedFreq = _mockPartial *
@@ -150,9 +154,9 @@ class _HomePageState extends State<HomePage> {
       if (freq != null && freq > 30) {
         final still = _velocity * 6.0 < 0.5;
         final hit = still
-            ? _cal.addSample(d.filtMm.toDouble(), freq)
+            ? _cal.addSample(filt, freq)
             : SlideCalibration.resolvePitch(
-                freq, _cal.semitonesFromMm(d.filtMm.toDouble()));
+                freq, _cal.semitonesFromMm(filt));
         if (hit != null) pitchPos = hit.$2 / SlideCalibration.maxSemitones;
         if (hit != null && still) _calDirty = true;
       }
@@ -178,6 +182,7 @@ class _HomePageState extends State<HomePage> {
             _totalDistance = 0;
             _activeSeconds = 0;
             _posHistory.clear();
+            _smooth.reset();
             _pitchHistory.clear();
           }
         });
@@ -224,6 +229,7 @@ class _HomePageState extends State<HomePage> {
     _totalDistance = 0;
     _activeSeconds = 0;
     _posHistory.clear();
+    _smooth.reset();
     _pitchHistory.clear();
     _status = useMock ? 'Mock mode' : 'Tap to connect';
     _listen();

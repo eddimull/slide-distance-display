@@ -1,8 +1,9 @@
 /*
  * SlidePod rev 0.1 — trombone slide position sensor
  *
- * Reads VL53L1X distance at 50 Hz, applies a Kalman filter, maps to
- * slide position (0.0–1.0), and broadcasts via BLE GATT notify.
+ * Reads VL53L1X distance, maps it to a rough slide position (0.0–1.0) for
+ * the LED, and broadcasts the raw reading via BLE GATT notify. Smoothing
+ * (One-Euro filter) and calibrated position are done in the phone app.
  * A piezo contact pickup on the slide is sampled at 16 kHz (ADC DMA) and
  * run through YIN pitch detection every 20 ms.
  * Serial CSV output mirrors the BLE payload for debugging.
@@ -17,7 +18,6 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-#include "SimpleKalmanFilter.h"
 #include "pitch_yin.h"
 
 // ── Sensor library — switched at compile time ────────────────────────────
@@ -196,6 +196,8 @@ static void ble_init() {
 }
 
 // 8-byte LE payload: raw_mm(u16) + filt_mm(u16) + position(u16, 0–10000)
+//   filt_mm now repeats raw_mm (filtering moved to the app); the slot is
+//   kept so older app builds still parse the packet.
 //                    + pitch(u16, 0.1 Hz units, 0 = none)
 static void ble_notify(uint16_t raw, uint16_t filt, uint16_t pos10k,
                        uint16_t pitch10) {
@@ -217,8 +219,6 @@ static void ble_notify(uint16_t, uint16_t, uint16_t, uint16_t) {}
 static constexpr float DIST_CLOSED = 50.0f;    // ToF reading at position 0
 static constexpr float DIST_OPEN   = 550.0f;   // ToF reading at position 7
 
-// ── Kalman filter (mea_e, est_e, q) — tune q for responsiveness ─────────
-SimpleKalmanFilter kalman(2.0f, 2.0f, 0.01f);
 
 static void setRgb(bool r, bool g, bool b) {
   // Active-low: drive LOW to light the LED.
@@ -273,7 +273,7 @@ void setup() {
 
   setRgb(false, true, false);   // green = ready
   Serial.println("# SlidePod ready");
-  Serial.println("# dist_raw_mm,dist_filt_mm,position,pitch_hz,piezo_rms");
+  Serial.println("# dist_raw_mm,position,pitch_hz,piezo_rms");
 }
 
 void loop() {
@@ -294,9 +294,8 @@ void loop() {
     return;
   }
 
-  float filt = kalman.updateEstimate((float)raw);
   float pos  = constrain(
-    (filt - DIST_CLOSED) / (DIST_OPEN - DIST_CLOSED),
+    ((float)raw - DIST_CLOSED) / (DIST_OPEN - DIST_CLOSED),
     0.0f, 1.0f);
 
   // LED: green at rest, blue when slide is out.
@@ -306,12 +305,10 @@ void loop() {
     setRgb(false, true, false);
 
   const float pitch = g_pitchHz;
-  ble_notify(raw, (uint16_t)filt, (uint16_t)(pos * 10000.0f),
+  ble_notify(raw, raw, (uint16_t)(pos * 10000.0f),
              (uint16_t)(pitch * 10.0f + 0.5f));
 
   Serial.print(raw);
-  Serial.print(",");
-  Serial.print(filt, 1);
   Serial.print(",");
   Serial.print(pos, 3);
   Serial.print(",");
