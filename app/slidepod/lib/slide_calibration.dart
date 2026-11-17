@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 /// Pitch-based slide calibration for a Bb tenor trombone.
@@ -125,6 +126,30 @@ class SlideCalibration {
   int get bucketsFilled =>
       _buckets.where((b) => b.count >= _Bucket.minCount).length;
 
+  /// Serialises the learned samples (not just the fit), so learning
+  /// continues across sessions instead of starting from one frozen line.
+  String toJson() => jsonEncode({
+        'v': 1,
+        'buckets': [for (final bk in _buckets) bk.toJson()],
+      });
+
+  /// Restores state from [toJson]. Ignores anything malformed.
+  void loadJson(String json) {
+    try {
+      final m = jsonDecode(json) as Map<String, dynamic>;
+      if (m['v'] != 1) return;
+      final list = m['buckets'] as List;
+      if (list.length != _buckets.length) return;
+      reset();
+      for (var i = 0; i < list.length; i++) {
+        _buckets[i].loadJson(list[i] as List);
+      }
+      _refit();
+    } catch (_) {
+      reset();
+    }
+  }
+
   void reset() {
     a = 50.0;
     b = _defaultB;
@@ -160,5 +185,15 @@ class _Bucket {
   void clear() {
     _sx = _sy = 0;
     count = 0;
+  }
+
+  List<num> toJson() => [_sx, _sy, count];
+
+  void loadJson(List l) {
+    final c = (l[2] as num).toInt();
+    if (c <= 0 || c > maxCount) return;
+    _sx = (l[0] as num).toDouble();
+    _sy = (l[1] as num).toDouble();
+    count = c;
   }
 }

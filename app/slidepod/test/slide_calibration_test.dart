@@ -43,4 +43,22 @@ void main() {
       expect(s, closeTo(p - 1.0, 0.05), reason: 'position $p');
     }
   });
+
+  test('round-trips through JSON and keeps learning', () {
+    final cal = SlideCalibration();
+    for (final (partial, pos) in [(2, 1), (3, 4), (4, 6)]) {
+      for (var i = 0; i < 20; i++) {
+        cal.addSample(mmAt(pos - 1.0), freqAt(partial, pos - 1.0));
+      }
+    }
+    final restored = SlideCalibration()..loadJson(cal.toJson());
+    expect(restored.calibrated, isTrue);
+    expect(restored.a, closeTo(cal.a, 1e-9));
+    expect(restored.b, closeTo(cal.b, 1e-9));
+    expect(restored.bucketsFilled, cal.bucketsFilled);
+
+    // Garbage leaves a clean, uncalibrated state rather than throwing.
+    final bad = SlideCalibration()..loadJson('{"v":1,"buckets":"nope"}');
+    expect(bad.calibrated, isFalse);
+  });
 }

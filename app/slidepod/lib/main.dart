@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'pitch_detector.dart';
 import 'slide_calibration.dart';
 import 'slidepod_ble.dart';
@@ -76,11 +77,21 @@ class _HomePageState extends State<HomePage> {
   // from, deliberately different from the default so calibration has work
   // to do.
   static const _mockTrueA = 80.0, _mockTrueB = 1150.0;
+  // Calibration persistence. Mock data has its own fake geometry, so it
+  // gets its own key and never pollutes the real instrument's calibration.
+  SharedPreferences? _prefs;
+  bool _calDirty = false;
+  Timer? _calSaveTimer;
+  String get _calKey => _source.isMock ? 'slide_cal_mock' : 'slide_cal';
 
   @override
   void initState() {
     super.initState();
     _listen();
+    _loadCal();
+    // Samples arrive at 50 Hz; write at most every few seconds.
+    _calSaveTimer =
+        Timer.periodic(const Duration(seconds: 3), (_) => _saveCal());
     _pitchSub = _pitchDetector.pitchStream.listen((freq) {
       if (mounted) setState(() => _detectedFreq = freq);
     });
@@ -141,6 +152,7 @@ class _HomePageState extends State<HomePage> {
             : SlideCalibration.resolvePitch(
                 freq, _cal.semitonesFromMm(d.filtMm.toDouble()));
         if (hit != null) pitchPos = hit.$2 / SlideCalibration.maxSemitones;
+        if (hit != null && still) _calDirty = true;
       }
 
       _posHistory.add(d.position);
@@ -171,6 +183,25 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<void> _loadCal() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    final json = _prefs!.getString(_calKey);
+    if (!mounted) return;
+    setState(() => json == null ? _cal.reset() : _cal.loadJson(json));
+  }
+
+  void _saveCal() {
+    if (!_calDirty || _prefs == null) return;
+    _calDirty = false;
+    _prefs!.setString(_calKey, _cal.toJson());
+  }
+
+  void _resetCal() {
+    setState(_cal.reset);
+    _prefs?.remove(_calKey);
+    _calDirty = false;
+  }
+
   Future<void> _startMock() async {
     setState(() {
       _scanning = true;
@@ -181,6 +212,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _switchSource(bool useMock) {
+    _saveCal();
     _source.disconnect();
     _source.dispose();
     _source = useMock ? SlidePodMock() : SlidePodBle();
@@ -193,6 +225,7 @@ class _HomePageState extends State<HomePage> {
     _pitchHistory.clear();
     _status = useMock ? 'Mock mode' : 'Tap to connect';
     _listen();
+    _loadCal();
     setState(() {});
     if (useMock) _startMock();
   }
@@ -212,6 +245,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _calSaveTimer?.cancel();
+    _saveCal();
     _pitchSub?.cancel();
     _pitchDetector.dispose();
     _source.dispose();
@@ -509,7 +544,7 @@ class _HomePageState extends State<HomePage> {
                                 value: _data.position.toStringAsFixed(3)),
                             // Tap to clear and re-learn from pitch.
                             GestureDetector(
-                              onTap: () => setState(_cal.reset),
+                              onTap: _resetCal,
                               child: _DataChip(
                                   label: 'Cal (tap reset)',
                                   value: _cal.calibrated
