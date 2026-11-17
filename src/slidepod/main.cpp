@@ -88,7 +88,10 @@
 static volatile float g_pitchHz  = 0;   // 0 = no clear pitch
 static volatile float g_piezoRms = 0;   // ADC counts, for tuning amp gain
 
-#ifndef WOKWI_SIM
+// Off by default: rev 0.1 boards have no piezo fitted. Build with
+// -D SLIDEPOD_PIEZO to turn it back on. The 57 Hz loop / 7.5 ms BLE
+// timing was verified with it off; re-check that if you enable it.
+#if !defined(WOKWI_SIM) && defined(SLIDEPOD_PIEZO)
 #include <driver/adc.h>
 
 static PitchYin yin;  // ~7 KB of buffers; global, not on the task stack
@@ -153,7 +156,7 @@ static void piezo_init() {
   xTaskCreatePinnedToCore(piezo_task, "piezo", 4096, nullptr, 2, nullptr, 1);
 }
 #else
-static void piezo_init() {}  // Wokwi: no ADC DMA; pitch stays 0
+static void piezo_init() {}  // disabled or Wokwi: pitch stays 0
 #endif
 
 // ── BLE (real hardware only — Wokwi has no BLE stack) ───────────────────
