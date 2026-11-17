@@ -213,6 +213,13 @@ static void setRgb(bool r, bool g, bool b) {
 
 void setup() {
   Serial.begin(115200);
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+  // USB-Serial-JTAG: once a host has enumerated us, the core waits up to
+  // 100 ms per write when nobody is reading the port. With the cable in a
+  // PC but no monitor open, that stalled loop() to ~1 update / 1.6 s.
+  // Never block: drop serial output instead.
+  Serial.setTxTimeoutMs(0);
+#endif
 
   pinMode(PIN_LED_R, OUTPUT);
   pinMode(PIN_LED_G, OUTPUT);
