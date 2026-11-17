@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'pitch_detector.dart';
+import 'slide_calibration.dart';
 import 'slidepod_ble.dart';
 import 'trombone_chart.dart';
 
@@ -69,6 +70,13 @@ class _HomePageState extends State<HomePage> {
   // Pitch history (normalized 0–1 matching position scale)
   final List<double?> _pitchHistory = [];
 
+  // Maps ToF mm → slide position, auto-fitted from detected pitch.
+  final SlideCalibration _cal = SlideCalibration();
+  // Mock mode only: the "real" slide geometry the mock pitch is generated
+  // from, deliberately different from the default so calibration has work
+  // to do.
+  static const _mockTrueA = 80.0, _mockTrueB = 1150.0;
+
   @override
   void initState() {
     super.initState();
@@ -82,15 +90,22 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _listen() {
-    _source.dataStream.listen((d) {
+    _source.dataStream.listen((raw) {
       if (!mounted) return;
+      // Position comes from the calibrated mm mapping, not the firmware's
+      // linear guess.
+      final d = SlideData(
+        rawMm: raw.rawMm,
+        filtMm: raw.filtMm,
+        position: _cal.positionFromMm(raw.filtMm.toDouble()),
+      );
       final now = DateTime.now();
       final dt = now.difference(_prevTime).inMicroseconds / 1e6;
       if (dt > 0.001) {
         final delta = (d.position - _prevPosition).abs();
         final rawVel = delta / dt;
         _velocity = _velocity * (1 - _velocitySmoothing) + rawVel * _velocitySmoothing;
-        if (_velocity * 7.0 >= 0.5) {
+        if (_velocity * 6.0 >= 0.5) {
           _totalDistance += delta;
           _activeSeconds += dt;
         }
@@ -105,22 +120,27 @@ class _HomePageState extends State<HomePage> {
           _mockPartial = 2 + _mockRng.nextInt(5); // partials 2–6
           _mockPartialTicks = 0;
         }
-        final slide = (d.position * 6 + 1).round().clamp(1, 7);
-        final midi = TromboneChart.midiAt(_mockPartial, slide);
-        final exact = TromboneChart.frequency(midi);
-        // Add ±15 cents of random detuning
-        final centsOff = (_mockRng.nextDouble() - 0.5) * 30;
-        _detectedFreq = exact * math.pow(2, centsOff / 1200);
+        // Pitch follows the slide's true (hidden) geometry, on the harmonic
+        // series, with ±10 cents of lipping noise.
+        final x = (d.filtMm - _mockTrueA) / _mockTrueB;
+        final semis = 12 * math.log(1 + x) / math.ln2;
+        final centsOff = (_mockRng.nextDouble() - 0.5) * 20;
+        _detectedFreq = _mockPartial *
+            SlideCalibration.f0 /
+            math.pow(2, (semis * 100 - centsOff) / 1200);
       }
 
-      // Track pitch as a normalized position (which slide position the pitch maps to)
+      // Pitch → exact slide extension. While the slide is near-still, also
+      // feed it to the calibrator (when moving, the filtered mm lags).
       double? pitchPos;
-      if (_detectedFreq != null && _detectedFreq! > 30) {
-        final slide = (d.position * 6 + 1).round().clamp(1, 7);
-        final (note, c) = TromboneChart.closestAt(slide, _detectedFreq!);
-        if (c.abs() < 100 && note.partial >= 2) {
-          pitchPos = (note.midi - TromboneChart.midiAt(note.partial, 1)).abs() / 6.0;
-        }
+      final freq = _detectedFreq;
+      if (freq != null && freq > 30) {
+        final still = _velocity * 6.0 < 0.5;
+        final hit = still
+            ? _cal.addSample(d.filtMm.toDouble(), freq)
+            : SlideCalibration.resolvePitch(
+                freq, _cal.semitonesFromMm(d.filtMm.toDouble()));
+        if (hit != null) pitchPos = hit.$2 / SlideCalibration.maxSemitones;
       }
 
       _posHistory.add(d.position);
@@ -276,16 +296,16 @@ class _HomePageState extends State<HomePage> {
   }
 
   int _positionToSlide(double pos) {
-    final raw = pos * 7.0;
-    return raw.round().clamp(1, 7);
+    // pos 0.0 = 1st position, 1.0 = 7th → six intervals, not seven.
+    return (1 + (pos * 6.0).round()).clamp(1, 7);
   }
 
   @override
   Widget build(BuildContext context) {
     final slideNum = _connected ? _positionToSlide(_data.position) : null;
-    final velocityPosPerSec = _velocity * 7.0;
+    final velocityPosPerSec = _velocity * 6.0;
     final avgPosPerSec = _activeSeconds > 0.5
-        ? (_totalDistance * 7.0) / _activeSeconds
+        ? (_totalDistance * 6.0) / _activeSeconds
         : 0.0;
 
     // Find active note for tuner display
@@ -487,6 +507,15 @@ class _HomePageState extends State<HomePage> {
                             _DataChip(
                                 label: 'Position',
                                 value: _data.position.toStringAsFixed(3)),
+                            // Tap to clear and re-learn from pitch.
+                            GestureDetector(
+                              onTap: () => setState(_cal.reset),
+                              child: _DataChip(
+                                  label: 'Cal (tap reset)',
+                                  value: _cal.calibrated
+                                      ? '${_cal.bucketsFilled}/7 pos'
+                                      : 'learning'),
+                            ),
                           ],
                         ),
                       ),
