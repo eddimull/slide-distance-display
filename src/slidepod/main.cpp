@@ -38,7 +38,12 @@
   }
   static bool tof_ok() { return true; }
 #else
-  // Real hardware: VL53L1X in Short mode, 20 ms timing budget.
+  // Real hardware: VL53L1X in Short mode, 15 ms timing budget, 19 ms
+  // inter-measurement period -> a reading every ~17.6 ms (the sensor's
+  // clock runs ~7.5% fast). The period needs ~4 ms of headroom over the
+  // budget: with both at 20 ms it skipped every other slot (37 ms), and
+  // 15/18 did the same at close range. 15 ms is ST's minimum for Short
+  // mode; measured noise ~2 mm mid-slide, ~11 mm at 1st (same as 20 ms).
   #include <VL53L1X.h>
   VL53L1X tof;
   static bool tof_init() {
@@ -47,8 +52,8 @@
   }
   static void tof_start() {
     tof.setDistanceMode(VL53L1X::Short);
-    tof.setMeasurementTimingBudget(20000);
-    tof.startContinuous(20);
+    tof.setMeasurementTimingBudget(15000);
+    tof.startContinuous(19);
   }
   static uint16_t tof_read() {
     return tof.read();
@@ -175,6 +180,27 @@ class FastConnOnSubscribe : public NimBLECharacteristicCallbacks {
 };
 static FastConnOnSubscribe fastConnCb;
 
+// The subscribe-time request can collide with Android's own switch to
+// 45 ms (pod sees LL Procedure Collision, 0x223) and NimBLE won't retry.
+// So re-check and re-request while the interval is still above 7.5 ms.
+// Retry slowly: an accepted update takes ~360 ms to apply, and asking again
+// sooner cancels it (0x23B). Measured on the phone: Android accepts 7.5 ms
+// every time it gets the request cleanly. iOS will keep refusing (< 15 ms).
+static void ble_keep_fast() {
+  static uint32_t lastCheck = 0;
+  static uint8_t tries = 0;
+  if (millis() - lastCheck < 1500) return;
+  lastCheck = millis();
+  auto* srv = NimBLEDevice::getServer();
+  // Handles get reused across connections, so reset whenever nobody's on.
+  if (!srv || !srv->getConnectedCount()) { tries = 0; return; }
+  if (!posChr->getSubscribedCount()) return;
+  NimBLEConnInfo info = srv->getPeerInfo(0);
+  if (info.getConnInterval() <= 6 || tries >= 5) return;
+  tries++;
+  srv->updateConnParams(info.getConnHandle(), 6, 6, 0, 200);
+}
+
 static void ble_init() {
   NimBLEDevice::init("SlidePod");
 
@@ -212,6 +238,7 @@ static void ble_notify(uint16_t raw, uint16_t filt, uint16_t pos10k,
 }
 #else
 static void ble_init() {}
+static void ble_keep_fast() {}
 static void ble_notify(uint16_t, uint16_t, uint16_t, uint16_t) {}
 #endif
 
@@ -288,6 +315,8 @@ void loop() {
   prev_btn = btn;
 #endif
 
+  ble_keep_fast();
+
   uint16_t raw = tof_read();
   if (!tof_ok()) {
     Serial.println("# timeout");
@@ -316,5 +345,9 @@ void loop() {
   Serial.print(",");
   Serial.println(g_piezoRms, 1);
 
-  delay(20);  // 50 Hz
+#ifdef WOKWI_SIM
+  delay(18);  // mock sensor returns instantly; pace it like the real one
+#endif
+  // Real hardware: no delay. tof_read() blocks until the sensor's next
+  // reading, so the loop runs at the sensor's rate.
 }
