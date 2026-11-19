@@ -45,6 +45,10 @@ abstract class SlidePodSource {
   bool get isMock;
   Future<void> connectFirst();
   Future<void> disconnect();
+
+  /// Holds the pod's LED at [rgb] (levels 0–255), or hands it back to the
+  /// pod's own status colours when null. No-op if unsupported.
+  Future<void> setLed((int, int, int)? rgb);
   void dispose();
 }
 
@@ -118,6 +122,9 @@ class SlidePodMock implements SlidePodSource {
   }
 
   @override
+  Future<void> setLed((int, int, int)? rgb) async {}
+
+  @override
   void dispose() {
     _timer?.cancel();
     _dataController.close();
@@ -130,6 +137,8 @@ class SlidePodMock implements SlidePodSource {
 class SlidePodBle implements SlidePodSource {
   static final _svcUuid = Guid("d5e40001-7537-4463-a441-27f2d3140fab");
   static final _posUuid = Guid("d5e40002-7537-4463-a441-27f2d3140fab");
+  static final _ledUuid = Guid("d5e40003-7537-4463-a441-27f2d3140fab");
+  BluetoothCharacteristic? _ledChr; // absent on older firmware
 
   BluetoothDevice? _device;
   StreamSubscription? _notifySub;
@@ -198,18 +207,33 @@ class SlidePodBle implements SlidePodSource {
     await device.connect(license: License.nonprofit, autoConnect: false);
     final services = await device.discoverServices();
 
+    _ledChr = null;
     for (final svc in services) {
-      if (svc.serviceUuid == _svcUuid) {
-        for (final chr in svc.characteristics) {
-          if (chr.characteristicUuid == _posUuid) {
-            await chr.setNotifyValue(true);
-            _notifySub = chr.onValueReceived.listen((bytes) {
-              _dataController.add(SlideData.fromBytes(bytes));
-            });
-            return;
-          }
+      if (svc.serviceUuid != _svcUuid) continue;
+      for (final chr in svc.characteristics) {
+        if (chr.characteristicUuid == _ledUuid) _ledChr = chr;
+      }
+      for (final chr in svc.characteristics) {
+        if (chr.characteristicUuid == _posUuid) {
+          await chr.setNotifyValue(true);
+          _notifySub = chr.onValueReceived.listen((bytes) {
+            _dataController.add(SlideData.fromBytes(bytes));
+          });
+          return;
         }
       }
+    }
+  }
+
+  @override
+  Future<void> setLed((int, int, int)? rgb) async {
+    final chr = _ledChr;
+    if (chr == null || !_connected) return;
+    final payload = rgb == null ? [0] : [1, rgb.$1, rgb.$2, rgb.$3];
+    try {
+      await chr.write(payload, withoutResponse: true);
+    } catch (_) {
+      // Cosmetic; never let the LED break the data stream.
     }
   }
 

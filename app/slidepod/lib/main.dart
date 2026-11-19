@@ -6,6 +6,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'one_euro.dart';
 import 'pitch_detector.dart';
+import 'position_colors.dart';
 import 'slide_calibration.dart';
 import 'slidepod_ble.dart';
 import 'trombone_chart.dart';
@@ -77,6 +78,12 @@ class _HomePageState extends State<HomePage> {
   // never bends the calibration.
   final SlideCalibration _cal = SlideCalibration();
   bool _calibrating = false;
+  // Easy mode: a limited display for new players learning positions.
+  bool _easy = false;
+  static const _easyKey = 'ui_easy';
+  // Position the pod's LED was last set for: 0 = pod's own colours,
+  // -1 = unknown (resend).
+  int _ledSent = -1;
   // Latest lipping reading: (partial, cents), + = sharper than the slide.
   (int, double)? _lip;
   // Smoothing of the raw ToF reading (the pod sends it unfiltered).
@@ -97,6 +104,10 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _listen();
     _loadCal();
+    SharedPreferences.getInstance().then((p) {
+      _prefs ??= p;
+      if (mounted) setState(() => _easy = p.getBool(_easyKey) ?? false);
+    });
     // Samples arrive at 50 Hz; write at most every few seconds.
     _calSaveTimer =
         Timer.periodic(const Duration(seconds: 3), (_) => _saveCal());
@@ -121,6 +132,7 @@ class _HomePageState extends State<HomePage> {
         pitchHz: raw.pitchHz,
         hasPiezo: raw.hasPiezo,
       );
+      _syncLed(_positionToSlide(d.position));
       final now = DateTime.now();
       final dt = now.difference(_prevTime).inMicroseconds / 1e6;
       if (dt > 0.001) {
@@ -187,6 +199,7 @@ class _HomePageState extends State<HomePage> {
       if (mounted) {
         setState(() {
           _connected = c;
+          _ledSent = -1; // new link: the pod starts on its own colours
           _status = c
               ? (_source.isMock ? 'Mock connected' : 'Connected')
               : (_source.isMock ? 'Mock mode' : 'Disconnected');
@@ -224,6 +237,21 @@ class _HomePageState extends State<HomePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Calibration saved '
             '(positions ${_cal.capturedPositions.join(' ')})')));
+  }
+
+  void _setEasy(bool easy) {
+    setState(() => _easy = easy);
+    _prefs?.setBool(_easyKey, easy);
+    _syncLed(_positionToSlide(_data.position));
+  }
+
+  /// In Easy mode the pod's LED shows the position's colour; otherwise the
+  /// pod runs its own status colours. Only writes on change.
+  void _syncLed(int slide) {
+    final want = _easy && _connected ? slide : 0;
+    if (want == _ledSent) return;
+    _ledSent = want;
+    _source.setLed(want == 0 ? null : PositionColors.led[want - 1]);
   }
 
   /// Tap 1: start over and learn from what's played (turns the mic on).
@@ -265,6 +293,7 @@ class _HomePageState extends State<HomePage> {
     // Mock mode fakes _detectedFreq; don't carry it over to the real pod.
     _detectedFreq = null;
     _lip = null;
+    _ledSent = -1;
     _calibrating = false;
     _status = useMock ? 'Mock mode' : 'Tap to connect';
     _listen();
@@ -452,7 +481,21 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const Spacer(),
-                  if (kDebugMode)
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: true, label: Text('Easy')),
+                      ButtonSegment(value: false, label: Text('Full')),
+                    ],
+                    selected: {_easy},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) => _setEasy(s.first),
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  if (kDebugMode) ...[
+                    const SizedBox(width: 8),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -471,6 +514,7 @@ class _HomePageState extends State<HomePage> {
                                 fontSize: 10, color: Colors.grey.shade600)),
                       ],
                     ),
+                  ],
                 ],
               ),
             ),
@@ -489,7 +533,20 @@ class _HomePageState extends State<HomePage> {
               const Spacer(),
             ],
 
-            if (_connected)
+            if (_connected && _easy)
+              Expanded(
+                child: _EasyView(
+                  slideNum: slideNum,
+                  position: _data.position,
+                  activeNote: activeNote,
+                  cents: activeCents,
+                  micActive: _micActive || _source.isMock,
+                  isMock: _source.isMock,
+                  onMicToggle: _toggleMic,
+                ),
+              ),
+
+            if (_connected && !_easy)
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -779,7 +836,9 @@ class _SpeedometerPainter extends CustomPainter {
 
 class _SlideBar extends StatelessWidget {
   final double position;
-  const _SlideBar({required this.position});
+  final bool large;
+  final List<Color>? colors; // per position (Easy mode)
+  const _SlideBar({required this.position, this.large = false, this.colors});
 
   @override
   Widget build(BuildContext context) {
@@ -795,9 +854,13 @@ class _SlideBar extends StatelessWidget {
               return Text(
                 '${i + 1}',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: large ? 22 : 12,
                   fontWeight: active ? FontWeight.bold : FontWeight.normal,
-                  color: active ? Colors.blue : Colors.grey,
+                  color: colors != null
+                      ? colors![i].withValues(alpha: active ? 1 : 0.5)
+                      : active
+                          ? Colors.blue
+                          : Colors.grey,
                 ),
               );
             }),
@@ -807,15 +870,149 @@ class _SlideBar extends StatelessWidget {
         ClipRRect(
           borderRadius: BorderRadius.circular(6),
           child: SizedBox(
-            height: 12,
+            height: large ? 20 : 12,
             child: LinearProgressIndicator(
               value: position.clamp(0.0, 1.0),
               backgroundColor: Colors.grey.shade800,
-              valueColor: const AlwaysStoppedAnimation(Colors.blue),
+              valueColor: AlwaysStoppedAnimation(colors == null
+                  ? Colors.blue
+                  : colors![(position * 6).round().clamp(0, 6)]),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Easy mode ───────────────────────────────────────────────────────────
+
+/// Limited display for new players learning their positions: where the
+/// slide is, and while a note sounds, the note with an arrow showing which
+/// way to tune it. No gauges, charts, raw numbers, cents or lip readout.
+class _EasyView extends StatelessWidget {
+  final int? slideNum;
+  final double position;
+  final ChartNote? activeNote;
+  final double? cents;
+  final bool micActive;
+  final bool isMock;
+  final VoidCallback onMicToggle;
+
+  const _EasyView({
+    required this.slideNum,
+    required this.position,
+    required this.activeNote,
+    required this.cents,
+    required this.micActive,
+    required this.isMock,
+    required this.onMicToggle,
+  });
+
+  static const _ordinals = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th'];
+
+  @override
+  Widget build(BuildContext context) {
+    final hasNote = activeNote != null && cents != null;
+    final c = cents ?? 0;
+    final color = c.abs() < 10
+        ? Colors.green
+        : c.abs() < 25
+            ? Colors.amber
+            : Colors.red;
+    // Flat -> bring the pitch up (slide in); sharp -> down (slide out).
+    final (IconData icon, String hint) = c.abs() < 10
+        ? (Icons.check_circle, 'in tune')
+        : c < 0
+            ? (Icons.arrow_upward, 'slide in')
+            : (Icons.arrow_downward, 'slide out');
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        children: [
+          const Spacer(),
+          Text('Position',
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade500)),
+          SizedBox(
+            height: 150,
+            child: FittedBox(
+              child: Text(
+                slideNum == null ? '-' : _ordinals[slideNum! - 1],
+                style: TextStyle(
+                  fontSize: 140,
+                  fontWeight: FontWeight.w300,
+                  color: slideNum == null
+                      ? Colors.grey
+                      : PositionColors.screen[slideNum! - 1],
+                  height: 1,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SlideBar(
+              position: position, large: true, colors: PositionColors.screen),
+          const Spacer(),
+          // Fixed height whether or not a note is sounding, so nothing jumps.
+          SizedBox(
+            height: 110,
+            child: !hasNote
+                ? Center(
+                    child: Text(
+                      micActive ? 'Play a note' : 'Tap the mic to hear your notes',
+                      style:
+                          TextStyle(fontSize: 22, color: Colors.grey.shade500),
+                    ),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Fixed slot: "Bb3" is wider than "A3", and the
+                      // arrow shouldn't move when the note changes.
+                      SizedBox(
+                        width: 170,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            activeNote!.name,
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 72,
+                              fontWeight: FontWeight.w600,
+                              color: color,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      SizedBox(
+                        width: 90,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(icon, size: 64, color: color),
+                            Text(hint,
+                                style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade400)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          const Spacer(),
+          if (!isMock)
+            IconButton.filledTonal(
+              iconSize: 36,
+              onPressed: onMicToggle,
+              icon: Icon(micActive ? Icons.mic : Icons.mic_off),
+            ),
+          const SizedBox(height: 24),
+        ],
+      ),
     );
   }
 }
