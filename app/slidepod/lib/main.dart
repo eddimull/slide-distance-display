@@ -75,7 +75,7 @@ class _HomePageState extends State<HomePage> {
   // Maps ToF mm → slide position, auto-fitted from detected pitch.
   final SlideCalibration _cal = SlideCalibration();
   // Smoothing of the raw ToF reading (the pod sends it unfiltered).
-  final OneEuroFilter _smooth = OneEuroFilter();
+  final OneEuroFilter _smooth = OneEuroFilter(deadband: 2);
   // Mock mode only: the "real" slide geometry the mock pitch is generated
   // from, deliberately different from the default so calibration has work
   // to do.
@@ -355,7 +355,9 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final slideNum = _connected ? _positionToSlide(_data.position) : null;
-    final velocityPosPerSec = _velocity * 6.0;
+    // The smoothed speed only decays toward zero, and each small step of the
+    // held position adds a blip; below 0.2 positions/s the slide is still.
+    final velocityPosPerSec = _velocity * 6.0 < 0.2 ? 0.0 : _velocity * 6.0;
     final avgPosPerSec = _activeSeconds > 0.5
         ? (_totalDistance * 6.0) / _activeSeconds
         : 0.0;
@@ -484,9 +486,10 @@ class _HomePageState extends State<HomePage> {
                                 SizedBox(
                                   height: 70,
                                   width: 120,
+                                  // Replayed sessions peak around 19 pos/s.
                                   child: _Speedometer(
                                     value: velocityPosPerSec,
-                                    maxValue: 5.0,
+                                    maxValue: 20.0,
                                     label: 'Speed',
                                   ),
                                 ),
@@ -496,7 +499,7 @@ class _HomePageState extends State<HomePage> {
                                   width: 120,
                                   child: _Speedometer(
                                     value: avgPosPerSec,
-                                    maxValue: 5.0,
+                                    maxValue: 20.0,
                                     label: 'Avg',
                                   ),
                                 ),
@@ -821,13 +824,21 @@ class _CompactTuner extends StatelessWidget {
               width: 60,
               child: Column(
                 children: [
-                  Text(
-                    hasNote ? activeNote!.name : '-',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w600,
-                      height: 1,
-                      color: noteColor,
+                  // Fixed-size slots so a new note never resizes the row.
+                  SizedBox(
+                    height: 32,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        hasNote ? activeNote!.name : '-',
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w600,
+                          height: 1,
+                          color: noteColor,
+                        ),
+                      ),
                     ),
                   ),
                   Text(
@@ -835,6 +846,9 @@ class _CompactTuner extends StatelessWidget {
                         ? '${freq?.toStringAsFixed(1)} Hz'
                             '${freqSource == 'piezo' ? ' ·pz' : ''}'
                         : '',
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.clip,
                     style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
                   ),
                 ],
@@ -868,11 +882,11 @@ class _CompactTuner extends StatelessWidget {
                               fontSize: 9, color: Colors.grey.shade600)),
                     ],
                   ),
-                  if (hasNote)
-                    Text(
-                      '${c >= 0 ? '+' : ''}${c.toStringAsFixed(0)}¢',
-                      style: TextStyle(fontSize: 10, color: noteColor),
-                    ),
+                  // Always laid out (blank when no note) so the bar doesn't jump.
+                  Text(
+                    hasNote ? '${c >= 0 ? '+' : ''}${c.toStringAsFixed(0)}¢' : '',
+                    style: TextStyle(fontSize: 10, color: noteColor),
+                  ),
                 ],
               ),
             ),
@@ -892,16 +906,18 @@ class _CompactTuner extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        // Note chips
-        Wrap(
-          spacing: 4,
-          runSpacing: 4,
+        // Note chips: one row, each chip an equal share of the width.
+        Row(
           children: [
-            for (final n in displayed)
-              _NoteChip(
-                note: n,
-                active: activeNote?.partial == n.partial,
+            for (var i = 0; i < displayed.length; i++) ...[
+              if (i > 0) const SizedBox(width: 4),
+              Expanded(
+                child: _NoteChip(
+                  note: displayed[i],
+                  active: activeNote?.partial == displayed[i].partial,
+                ),
               ),
+            ],
           ],
         ),
       ],
@@ -967,7 +983,7 @@ class _NoteChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final bright = note.partial <= 6;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       decoration: BoxDecoration(
         color: active
             ? Colors.green.shade900
@@ -981,10 +997,14 @@ class _NoteChip extends StatelessWidget {
               : bright
                   ? Colors.blueGrey.shade600
                   : Colors.blueGrey.shade700,
-          width: active ? 1.5 : 0.5,
+          // Same width active or not, so the chip never changes size.
+          width: 1.5,
         ),
       ),
-      child: Column(
+      // Scale the labels down rather than wrap if the chip gets narrow.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
@@ -1011,6 +1031,7 @@ class _NoteChip extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }

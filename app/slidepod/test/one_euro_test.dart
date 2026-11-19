@@ -57,4 +57,19 @@ void main() {
     expect(sd(restOut), lessThan(sd(restRaw) * 0.7)); // ~0.86 vs 1.56 mm
     expect(moveErr[moveErr.length ~/ 2], lessThan(10)); // old Kalman: 45 mm
   });
+
+  test('deadband: holds still through noise, follows a real move', () {
+    final f = OneEuroFilter(deadband: 2);
+    final rng = math.Random(1);
+    final rest = [
+      for (var i = 0; i < 300; i++)
+        f.update(300 + (rng.nextDouble() - 0.5) * 3, at(i * 0.0176))
+    ].sublist(100);
+    expect(rest.reduce(math.max) - rest.reduce(math.min), lessThan(1.5));
+    double out = 0;
+    for (var i = 0; i < 100; i++) {
+      out = f.update(400, at((300 + i) * 0.0176));
+    }
+    expect((out - 400).abs(), lessThanOrEqualTo(2)); // within the band
+  });
 }
