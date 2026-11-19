@@ -201,13 +201,34 @@ static void piezo_init() {}  // disabled or Wokwi: pitch stays 0
 #endif
 
 // ── BLE (real hardware only — Wokwi has no BLE stack) ───────────────────
+// LED colour from the app (see LedWrite). Written from the BLE task.
+static volatile bool g_ledFromApp = false;
+static volatile uint8_t g_ledR = 0, g_ledG = 0, g_ledB = 0;
+
 #ifndef WOKWI_SIM
 #include <NimBLEDevice.h>
 
 #define SLIDEPOD_SVC_UUID  "d5e40001-7537-4463-a441-27f2d3140fab"
 #define SLIDEPOD_POS_UUID  "d5e40002-7537-4463-a441-27f2d3140fab"
+#define SLIDEPOD_LED_UUID  "d5e40003-7537-4463-a441-27f2d3140fab"
 
 static NimBLECharacteristic* posChr = nullptr;
+
+// LED colour set by the app (Easy mode colour-codes positions; only the app
+// knows the calibrated position). Write [1, r, g, b] to hold a colour,
+// [0] to hand the LED back to the pod.
+class LedWrite : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c) override {
+    const std::string v = c->getValue();
+    if (v.size() >= 4 && v[0] == 1) {
+      g_ledR = v[1]; g_ledG = v[2]; g_ledB = v[3];
+      g_ledFromApp = true;
+    } else {
+      g_ledFromApp = false;
+    }
+  }
+};
+static LedWrite ledWriteCb;
 
 // Debug: log raw GAP connect/disconnect events (status / reason codes).
 static int gap_log(struct ble_gap_event* ev, void*) {
@@ -257,7 +278,11 @@ static void ble_keep_fast() {
   lastCheck = millis();
   auto* srv = NimBLEDevice::getServer();
   // Handles get reused across connections, so reset whenever nobody's on.
-  if (!srv || !srv->getConnectedCount()) { tries = 0; return; }
+  if (!srv || !srv->getConnectedCount()) {
+    tries = 0;
+    g_ledFromApp = false;  // app gone: the pod owns the LED again
+    return;
+  }
   if (!posChr->getSubscribedCount()) return;
   NimBLEConnInfo info = srv->getPeerInfo(0);
   if (info.getConnInterval() <= 6 || tries >= 5) return;
@@ -279,6 +304,10 @@ static void ble_init() {
     NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
   );
   posChr->setCallbacks(&fastConnCb);
+  svc->createCharacteristic(
+    SLIDEPOD_LED_UUID,
+    NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
+  )->setCallbacks(&ledWriteCb);
   svc->start();
 
   auto* adv = NimBLEDevice::getAdvertising();
@@ -313,11 +342,20 @@ static constexpr float DIST_CLOSED = 50.0f;    // ToF reading at position 0
 static constexpr float DIST_OPEN   = 550.0f;   // ToF reading at position 7
 
 
+static void setRgb8(uint8_t r, uint8_t g, uint8_t b) {
+  // Only touch the PWM when the colour changes.
+  static int last = -1;
+  const int key = (r << 16) | (g << 8) | b;
+  if (key == last) return;
+  last = key;
+  // Active-low: 255 - level (255 = steady high = off).
+  analogWrite(PIN_LED_R, 255 - r);
+  analogWrite(PIN_LED_G, 255 - g);
+  analogWrite(PIN_LED_B, 255 - b);
+}
+
 static void setRgb(bool r, bool g, bool b) {
-  // Active-low: drive LOW to light the LED.
-  digitalWrite(PIN_LED_R, r ? LOW : HIGH);
-  digitalWrite(PIN_LED_G, g ? LOW : HIGH);
-  digitalWrite(PIN_LED_B, b ? LOW : HIGH);
+  setRgb8(r ? 255 : 0, g ? 255 : 0, b ? 255 : 0);
 }
 
 void setup() {
@@ -393,8 +431,11 @@ void loop() {
     ((float)raw - DIST_CLOSED) / (DIST_OPEN - DIST_CLOSED),
     0.0f, 1.0f);
 
-  // LED: green at rest, blue when slide is out.
-  if (pos > 0.03f)
+  // LED: the app's colour if it set one (Easy mode), otherwise green at
+  // rest and blue when the slide is out.
+  if (g_ledFromApp)
+    setRgb8(g_ledR, g_ledG, g_ledB);
+  else if (pos > 0.03f)
     setRgb(false, false, true);
   else
     setRgb(false, true, false);
