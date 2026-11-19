@@ -72,8 +72,13 @@ class _HomePageState extends State<HomePage> {
   // Pitch history (normalized 0–1 matching position scale)
   final List<double?> _pitchHistory = [];
 
-  // Maps ToF mm → slide position, auto-fitted from detected pitch.
+  // Maps ToF mm → slide position and learns the horn's partial tuning.
+  // Learns only while _calibrating, so normal playing (and its lipping)
+  // never bends the calibration.
   final SlideCalibration _cal = SlideCalibration();
+  bool _calibrating = false;
+  // Latest lipping reading: (partial, cents), + = sharper than the slide.
+  (int, double)? _lip;
   // Smoothing of the raw ToF reading (the pod sends it unfiltered).
   final OneEuroFilter _smooth = OneEuroFilter(deadband: 2);
   // Mock mode only: the "real" slide geometry the mock pitch is generated
@@ -147,19 +152,27 @@ class _HomePageState extends State<HomePage> {
             math.pow(2, (semis * 100 - centsOff) / 1200);
       }
 
-      // Pitch → exact slide extension. While the slide is near-still, also
-      // feed it to the calibrator (when moving, the filtered mm lags).
+      // Pitch → where this horn's slide would be for that note, and how far
+      // that is from where the slide actually is (lipping). In calibration
+      // mode, steady notes with the slide still are learned from (when
+      // moving, the filtered mm lags).
       double? pitchPos;
+      (int, double)? lip;
       final freq = d.pitchHz ?? _detectedFreq;
       if (freq != null && freq > 30) {
-        final still = _velocity * 6.0 < 0.5;
-        final hit = still
-            ? _cal.addSample(filt, freq)
-            : SlideCalibration.resolvePitch(
-                freq, _cal.semitonesFromMm(filt));
+        if (_calibrating &&
+            _velocity * 6.0 < 0.5 &&
+            _cal.addSample(filt, freq) != null) {
+          _calDirty = true;
+          // Stop by itself, so test notes played afterwards (lipped on
+          // purpose, say) don't get learned as the horn's tuning.
+          if (_cal.complete) _finishCalibration();
+        }
+        final hit = _cal.pitchSlide(freq, _cal.semitonesFromMm(filt));
         if (hit != null) pitchPos = hit.$2 / SlideCalibration.maxSemitones;
-        if (hit != null && still) _calDirty = true;
+        lip = _cal.lipCents(filt, freq);
       }
+      _lip = lip;
 
       _posHistory.add(d.position);
       _pitchHistory.add(pitchPos);
@@ -184,6 +197,7 @@ class _HomePageState extends State<HomePage> {
             _posHistory.clear();
             _smooth.reset();
             _pitchHistory.clear();
+            _lip = null;
           }
         });
       }
@@ -203,10 +217,27 @@ class _HomePageState extends State<HomePage> {
     _prefs!.setString(_calKey, _cal.toJson());
   }
 
-  void _resetCal() {
-    setState(_cal.reset);
-    _prefs?.remove(_calKey);
-    _calDirty = false;
+  void _finishCalibration() {
+    setState(() => _calibrating = false);
+    _calDirty = true;
+    _saveCal();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Calibration saved '
+            '(positions ${_cal.capturedPositions.join(' ')})')));
+  }
+
+  /// Tap 1: start over and learn from what's played (turns the mic on).
+  /// Tap 2: stop learning and save.
+  Future<void> _toggleCalibration() async {
+    if (_calibrating) {
+      _finishCalibration();
+      return;
+    }
+    setState(() {
+      _cal.reset();
+      _calibrating = true;
+    });
+    if (!_micActive && !_source.isMock) await _toggleMic();
   }
 
   Future<void> _startMock() async {
@@ -231,6 +262,10 @@ class _HomePageState extends State<HomePage> {
     _posHistory.clear();
     _smooth.reset();
     _pitchHistory.clear();
+    // Mock mode fakes _detectedFreq; don't carry it over to the real pod.
+    _detectedFreq = null;
+    _lip = null;
+    _calibrating = false;
     _status = useMock ? 'Mock mode' : 'Tap to connect';
     _listen();
     _loadCal();
@@ -246,8 +281,14 @@ class _HomePageState extends State<HomePage> {
         _detectedFreq = null;
       });
     } else {
-      await _pitchDetector.start();
-      setState(() => _micActive = true);
+      try {
+        await _pitchDetector.start();
+        setState(() => _micActive = true);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Mic unavailable: $e')));
+      }
     }
   }
 
@@ -523,6 +564,7 @@ class _HomePageState extends State<HomePage> {
                         slidePosition: slideNum ?? 1,
                         activeNote: activeNote,
                         cents: activeCents,
+                        lipCents: activeNote != null ? _lip?.$2 : null,
                         freq: _freq,
                         freqSource: _freqSource,
                         micActive: _micActive || _source.isMock,
@@ -564,14 +606,19 @@ class _HomePageState extends State<HomePage> {
                             _DataChip(
                                 label: 'Position',
                                 value: _data.position.toStringAsFixed(3)),
-                            // Tap to clear and re-learn from pitch.
+                            // Tap to calibrate by playing; tap again when done.
                             GestureDetector(
-                              onTap: _resetCal,
+                              onTap: _toggleCalibration,
                               child: _DataChip(
-                                  label: 'Cal (tap reset)',
-                                  value: _cal.calibrated
-                                      ? '${_cal.bucketsFilled}/7 pos'
-                                      : 'learning'),
+                                  label: !_calibrating
+                                      ? 'Cal (tap to redo)'
+                                      : _cal.missingPartials.isEmpty
+                                          ? 'Calibrating: tap to stop'
+                                          : 'Need partials '
+                                              '${_cal.missingPartials.join(' ')}',
+                                  value: _cal.capturedPositions.isEmpty
+                                      ? (_calibrating ? 'play 1st…7th' : 'not set')
+                                      : 'pos ${_cal.capturedPositions.join(' ')}'),
                             ),
                           ],
                         ),
@@ -779,6 +826,7 @@ class _CompactTuner extends StatelessWidget {
   final int slidePosition;
   final ChartNote? activeNote;
   final double? cents;
+  final double? lipCents; // + = played sharper than the slide position gives
   final double? freq;
   final String? freqSource; // 'piezo' / 'mic'
   final bool micActive;
@@ -789,6 +837,7 @@ class _CompactTuner extends StatelessWidget {
     required this.slidePosition,
     required this.activeNote,
     required this.cents,
+    required this.lipCents,
     required this.freq,
     required this.freqSource,
     required this.micActive,
@@ -882,10 +931,39 @@ class _CompactTuner extends StatelessWidget {
                               fontSize: 9, color: Colors.grey.shade600)),
                     ],
                   ),
-                  // Always laid out (blank when no note) so the bar doesn't jump.
-                  Text(
-                    hasNote ? '${c >= 0 ? '+' : ''}${c.toStringAsFixed(0)}¢' : '',
-                    style: TextStyle(fontSize: 10, color: noteColor),
+                  // Always laid out (blank when no note) so the bar doesn't
+                  // jump; fixed widths so changing numbers don't shift it.
+                  // Left: tuning vs equal temperament. Right: lipping, i.e.
+                  // the pitch vs what the horn gives where the slide is.
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 56,
+                        child: Text(
+                          hasNote ? _signed(c) : '',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 10, color: noteColor),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 72,
+                        child: Text(
+                          hasNote && lipCents != null
+                              ? 'lip ${_signed(lipCents!)}'
+                              : '',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: lipCents == null || lipCents!.abs() < 10
+                                ? Colors.grey.shade500
+                                : lipCents!.abs() < 25
+                                    ? Colors.amber
+                                    : Colors.red,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -924,6 +1002,9 @@ class _CompactTuner extends StatelessWidget {
     );
   }
 }
+
+String _signed(double cents) =>
+    '${cents >= 0 ? '+' : ''}${cents.toStringAsFixed(0)}¢';
 
 class _CentsBarPainter extends CustomPainter {
   final double cents;

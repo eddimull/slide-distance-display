@@ -49,6 +49,8 @@
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>SlidePod uses Bluetooth to connect to your trombone slide sensor.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SlidePod listens to your trombone to detect pitch and calibrate slide positions.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>SlidePod uses Bluetooth to connect to your trombone slide sensor.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
