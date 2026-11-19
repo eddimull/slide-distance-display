@@ -209,6 +209,26 @@ static void piezo_init() {}  // disabled or Wokwi: pitch stays 0
 
 static NimBLECharacteristic* posChr = nullptr;
 
+// Debug: log raw GAP connect/disconnect events (status / reason codes).
+static int gap_log(struct ble_gap_event* ev, void*) {
+  switch (ev->type) {
+    case BLE_GAP_EVENT_CONNECT:
+      Serial.printf("# BLE connect status=%d handle=%d\n",
+                    ev->connect.status, ev->connect.conn_handle);
+      break;
+    case BLE_GAP_EVENT_DISCONNECT:
+      Serial.printf("# BLE disconnect reason=0x%03x\n", ev->disconnect.reason);
+      break;
+    case BLE_GAP_EVENT_CONN_UPDATE:
+      Serial.printf("# BLE conn update status=%d\n", ev->conn_update.status);
+      break;
+    case BLE_GAP_EVENT_SUBSCRIBE:
+      Serial.printf("# BLE subscribe notify=%d\n", ev->subscribe.cur_notify);
+      break;
+  }
+  return 0;
+}
+
 // Ask for the fastest BLE connection interval (7.5 ms) once the phone
 // subscribes. Android otherwise settles on 45 ms ("balanced") right after
 // service discovery, which adds up to 45 ms (avg ~22 ms) before each
@@ -247,6 +267,8 @@ static void ble_keep_fast() {
 
 static void ble_init() {
   NimBLEDevice::init("SlidePod");
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+  NimBLEDevice::setCustomGapHandler(gap_log);
 
   auto* srv = NimBLEDevice::createServer();
   srv->advertiseOnDisconnect(true);
