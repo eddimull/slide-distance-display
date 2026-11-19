@@ -161,11 +161,14 @@ class SlidePodBle implements SlidePodSource {
         }
       }
     });
-    await FlutterBluePlus.startScan(
-      withServices: [_svcUuid],
-      timeout: timeout,
-    );
-    sub.cancel();
+    // No withServices filter: Android's hardware 128-bit UUID filter drops
+    // SlidePod's advert on some phones (seen on Samsung S21). We filter by
+    // name/UUID in the listener above instead.
+    await FlutterBluePlus.startScan(timeout: timeout);
+    // startScan returns once scanning has *started*; wait for the timeout
+    // to end it before dropping the listener.
+    await FlutterBluePlus.isScanning.where((s) => !s).first;
+    await sub.cancel();
     return results;
   }
 
