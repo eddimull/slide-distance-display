@@ -38,28 +38,69 @@
   }
   static bool tof_ok() { return true; }
 #else
-  // Real hardware: VL53L1X in Short mode, 15 ms timing budget, 19 ms
-  // inter-measurement period -> a reading every ~17.6 ms (the sensor's
-  // clock runs ~7.5% fast). The period needs ~4 ms of headroom over the
-  // budget: with both at 20 ms it skipped every other slot (37 ms), and
-  // 15/18 did the same at close range. 15 ms is ST's minimum for Short
-  // mode; measured noise ~2 mm mid-slide, ~11 mm at 1st (same as 20 ms).
+  // Real hardware: VL53L1X, switching mode with distance.
+  //
+  // Near (slide in, < 500 mm): Short mode, full 16x16 field of view, 15 ms
+  // timing budget, 19 ms inter-measurement period -> a reading every
+  // ~17.6 ms (the sensor's clock runs ~7.5% fast). The period needs ~4 ms
+  // of headroom over the budget: with both at 20 ms it skipped every other
+  // slot (37 ms), and 15/18 did the same at close range. Measured noise
+  // ~2 mm mid-slide, ~11 mm at 1st.
+  //
+  // Far (past 500 mm): the slide crossbar is a weak return out there and
+  // Short mode often loses it to the player's hand or the room. Medium mode
+  // is more sensitive, and a 6x6 ROI (about half the field of view) keeps
+  // more of the hand and room out. Medium needs a 33 ms budget; 37 ms
+  // period skipped every other slot, 39 ms didn't; 41 ms -> ~26 readings/s.
+  //
+  // Medium read ~35 mm further than Short on the same crossbar at 5th, so
+  // the switch points are kept apart (out at 500, back at 450) to stop the
+  // mode flapping on that step.
   #include <VL53L1X.h>
   VL53L1X tof;
+  static constexpr uint16_t TOF_FAR_ABOVE_MM = 500;
+  static constexpr uint16_t TOF_NEAR_BELOW_MM = 450;
+  static constexpr uint8_t TOF_ROI_CENTRE = 199;  // optical centre (col 8, row 8)
+  static bool tof_far = false;
+  static bool tof_valid = false;
+
   static bool tof_init() {
     tof.setTimeout(500);
     return tof.init();
   }
+  static void tof_set_far(bool far) {
+    tof.stopContinuous();
+    if (far) {
+      tof.setDistanceMode(VL53L1X::Medium);
+      tof.setMeasurementTimingBudget(33000);
+      tof.setROISize(6, 6);
+      tof.setROICenter(TOF_ROI_CENTRE);
+      tof.startContinuous(41);
+    } else {
+      tof.setDistanceMode(VL53L1X::Short);
+      tof.setMeasurementTimingBudget(15000);
+      tof.setROISize(16, 16);
+      tof.setROICenter(TOF_ROI_CENTRE);
+      tof.startContinuous(19);
+    }
+    tof_far = far;
+    Serial.printf("# tof %s\n", far ? "far: Medium 6x6" : "near: Short 16x16");
+  }
   static void tof_start() {
-    tof.setDistanceMode(VL53L1X::Short);
-    tof.setMeasurementTimingBudget(15000);
-    tof.startContinuous(19);
+    tof_set_far(false);
   }
   static uint16_t tof_read() {
-    return tof.read();
+    const uint16_t mm = tof.read();
+    tof_valid = tof.ranging_data.range_status == VL53L1X::RangeValid;
+    // Switch on valid readings only; this one is still reported as is.
+    if (tof_valid) {
+      if (!tof_far && mm > TOF_FAR_ABOVE_MM) tof_set_far(true);
+      else if (tof_far && mm < TOF_NEAR_BELOW_MM) tof_set_far(false);
+    }
+    return mm;
   }
   static bool tof_ok() {
-    return tof.ranging_data.range_status == VL53L1X::RangeValid;
+    return tof_valid;
   }
 #endif
 
