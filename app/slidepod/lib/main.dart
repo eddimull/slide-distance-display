@@ -4,12 +4,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'calibration_screen.dart';
+import 'gliss_take.dart';
 import 'one_euro.dart';
 import 'pitch_detector.dart';
 import 'position_colors.dart';
 import 'slide_calibration.dart';
 import 'slidepod_ble.dart';
 import 'trombone_chart.dart';
+import 'upper_partials.dart';
 
 void main() => runApp(const SlidePodApp());
 
@@ -73,11 +76,20 @@ class _HomePageState extends State<HomePage> {
   // Pitch history (normalized 0–1 matching position scale)
   final List<double?> _pitchHistory = [];
 
-  // Maps ToF mm → slide position and learns the horn's partial tuning.
-  // Learns only while _calibrating, so normal playing (and its lipping)
-  // never bends the calibration.
+  // Maps ToF mm → slide position and the horn's partial tuning. The slide
+  // map comes from the guided gliss calibration; the upper partials are
+  // refined from steady notes while playing.
   final SlideCalibration _cal = SlideCalibration();
+  late final UpperPartialListener _upper = UpperPartialListener(_cal);
+  // Calibration screen open: no background learning, and the readings go
+  // to it through _frames.
   bool _calibrating = false;
+  final _frames = StreamController<CalFrame>.broadcast();
+  // Mock mode: the partial the calibration screen is asking for.
+  int? _mockCalPartial;
+  bool _calPrompted = false;
+  ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _calPrompt;
+  Future<void> _calLoaded = Future.value();
   // Easy mode: a limited display for new players learning positions.
   bool _easy = false;
   static const _easyKey = 'ui_easy';
@@ -88,6 +100,13 @@ class _HomePageState extends State<HomePage> {
   (int, double)? _lip;
   // Smoothing of the raw ToF reading (the pod sends it unfiltered).
   final OneEuroFilter _smooth = OneEuroFilter(deadband: 2);
+  // When the pod last sent anything, and last had a ToF reading. Medium
+  // mode sends every ~41 ms, so 100 ms of nothing means it's stuck.
+  DateTime _lastPacket = DateTime.now();
+  DateTime _lastRange = DateTime.now();
+  static const _quietAfter = Duration(milliseconds: 100);
+  // No ToF reading right now: the position comes from the pitch.
+  bool _blind = false;
   // Mock mode only: the "real" slide geometry the mock pitch is generated
   // from, deliberately different from the default so calibration has work
   // to do.
@@ -112,7 +131,18 @@ class _HomePageState extends State<HomePage> {
     _calSaveTimer =
         Timer.periodic(const Duration(seconds: 3), (_) => _saveCal());
     _pitchSub = _pitchDetector.pitchStream.listen((freq) {
-      if (mounted) setState(() => _detectedFreq = freq);
+      if (!mounted) return;
+      _detectedFreq = freq;
+      // The pod has gone quiet (the ToF blocking on a reading it can't get,
+      // or older firmware that sends nothing then): let the mic, every
+      // 20 ms, keep the display going from the pitch.
+      if (_connected &&
+          !_source.isMock &&
+          DateTime.now().difference(_lastPacket) > _quietAfter) {
+        _onReading(null);
+      } else {
+        setState(() {});
+      }
     });
     if (widget.autoMock && _source.isMock) {
       _startMock();
@@ -121,79 +151,7 @@ class _HomePageState extends State<HomePage> {
 
   void _listen() {
     _source.dataStream.listen((raw) {
-      if (!mounted) return;
-      // Smooth the raw reading here (the pod sends it unfiltered), then map
-      // through the calibrated geometry rather than the firmware's guess.
-      final filt = _smooth.update(raw.rawMm.toDouble(), DateTime.now());
-      final d = SlideData(
-        rawMm: raw.rawMm,
-        filtMm: filt.round(),
-        position: _cal.positionFromMm(filt),
-        pitchHz: raw.pitchHz,
-        hasPiezo: raw.hasPiezo,
-      );
-      _syncLed(_positionToSlide(d.position));
-      final now = DateTime.now();
-      final dt = now.difference(_prevTime).inMicroseconds / 1e6;
-      if (dt > 0.001) {
-        final delta = (d.position - _prevPosition).abs();
-        final rawVel = delta / dt;
-        _velocity = _velocity * (1 - _velocitySmoothing) + rawVel * _velocitySmoothing;
-        if (_velocity * 6.0 >= 0.5) {
-          _totalDistance += delta;
-          _activeSeconds += dt;
-        }
-      }
-      _prevPosition = d.position;
-      _prevTime = now;
-
-      // Mock pitch: simulate a detected frequency in mock mode
-      if (_source.isMock) {
-        _mockPartialTicks++;
-        if (_mockPartialTicks > 100 + _mockRng.nextInt(150)) {
-          _mockPartial = 2 + _mockRng.nextInt(5); // partials 2–6
-          _mockPartialTicks = 0;
-        }
-        // Pitch follows the slide's true (hidden) geometry, on the harmonic
-        // series, with ±10 cents of lipping noise.
-        final x = (filt - _mockTrueA) / _mockTrueB;
-        final semis = 12 * math.log(1 + x) / math.ln2;
-        final centsOff = (_mockRng.nextDouble() - 0.5) * 20;
-        _detectedFreq = _mockPartial *
-            SlideCalibration.f0 /
-            math.pow(2, (semis * 100 - centsOff) / 1200);
-      }
-
-      // Pitch → where this horn's slide would be for that note, and how far
-      // that is from where the slide actually is (lipping). In calibration
-      // mode, steady notes with the slide still are learned from (when
-      // moving, the filtered mm lags).
-      double? pitchPos;
-      (int, double)? lip;
-      final freq = d.pitchHz ?? _detectedFreq;
-      if (freq != null && freq > 30) {
-        if (_calibrating &&
-            _velocity * 6.0 < 0.5 &&
-            _cal.addSample(filt, freq) != null) {
-          _calDirty = true;
-          // Stop by itself, so test notes played afterwards (lipped on
-          // purpose, say) don't get learned as the horn's tuning.
-          if (_cal.complete) _finishCalibration();
-        }
-        final hit = _cal.pitchSlide(freq, _cal.semitonesFromMm(filt));
-        if (hit != null) pitchPos = hit.$2 / SlideCalibration.maxSemitones;
-        lip = _cal.lipCents(filt, freq);
-      }
-      _lip = lip;
-
-      _posHistory.add(d.position);
-      _pitchHistory.add(pitchPos);
-      if (_posHistory.length > _maxHistory) {
-        _posHistory.removeAt(0);
-        _pitchHistory.removeAt(0);
-      }
-
-      setState(() => _data = d);
+      if (mounted) _onReading(raw);
     });
     _source.connectionStream.listen((c) {
       if (mounted) {
@@ -211,13 +169,168 @@ class _HomePageState extends State<HomePage> {
             _smooth.reset();
             _pitchHistory.clear();
             _lip = null;
+            _blind = false;
           }
         });
+        if (c) {
+          _maybePromptCalibration();
+        } else {
+          _hideCalPrompt();
+        }
       }
     });
   }
 
-  Future<void> _loadCal() async {
+  /// One update of everything derived from the slide and the pitch. [raw]
+  /// is a packet from the pod, or null when the pod has gone quiet and the
+  /// mic drives the update instead (see [_pitchSub]).
+  ///
+  /// When the ToF has no reading (the pod sends [SlideData.noReading], or
+  /// nothing at all: past 500 mm in Medium mode the crossbar can drop out
+  /// for a while), the slide is placed from the pitch alone, on the partial
+  /// nearest where it was last seen; with no note either it holds.
+  void _onReading(SlideData? raw) {
+    final now = DateTime.now();
+    if (raw != null) _lastPacket = now;
+    double? filt;
+    if (raw != null && raw.hasRange) {
+      // A gap: start the smoothing afresh rather than glide from where the
+      // slide was before it.
+      if (now.difference(_lastRange) > const Duration(milliseconds: 150)) {
+        _smooth.reset();
+      }
+      _lastRange = now;
+      // Smooth the raw reading here (the pod sends it unfiltered), then map
+      // through the calibrated geometry rather than the firmware's guess.
+      filt = _smooth.update(raw.rawMm.toDouble(), now);
+    }
+
+    // Mock pitch: simulate a detected frequency in mock mode
+    final mock = _source is SlidePodMock ? _source as SlidePodMock : null;
+    mock?.glissMode = _mockCalPartial != null;
+    if (_source.isMock && filt != null) {
+      if (_mockCalPartial != null) {
+        _mockPartial = _mockCalPartial!; // play what calibration asks for
+      } else if (++_mockPartialTicks > 100 + _mockRng.nextInt(150)) {
+        _mockPartial = 2 + _mockRng.nextInt(5); // partials 2–6
+        _mockPartialTicks = 0;
+      }
+      // Pitch follows the slide's true (hidden) geometry, on the harmonic
+      // series, with ±10 cents of lipping noise.
+      final x = (filt - _mockTrueA) / _mockTrueB;
+      final semis = 12 * math.log(1 + x) / math.ln2;
+      final centsOff = (_mockRng.nextDouble() - 0.5) * 20;
+      _detectedFreq = _mockPartial *
+          SlideCalibration.f0 /
+          math.pow(2, (semis * 100 - centsOff) / 1200);
+      if (mock != null && mock.glissMode && !mock.sounding) {
+        _detectedFreq = null;
+      }
+    }
+    final freq = raw?.pitchHz ?? _detectedFreq;
+
+    final double position;
+    double? pitchPos;
+    (int, double)? lip;
+    if (filt != null) {
+      position = _cal.positionFromMm(filt);
+      // Pitch → where this horn's slide would be for that note, and how far
+      // that is from where the slide actually is (lipping).
+      if (freq != null && freq > 30) {
+        final hit = _cal.pitchSlide(freq, _cal.semitonesFromMm(filt));
+        if (hit != null) pitchPos = hit.$2 / SlideCalibration.maxSemitones;
+        lip = _cal.lipCents(filt, freq);
+      }
+    } else {
+      final s = _cal.semitonesFromPitchNear(
+          freq, _prevPosition * SlideCalibration.maxSemitones);
+      position = s == null
+          ? _prevPosition
+          : (s / SlideCalibration.maxSemitones).clamp(0.0, 1.0);
+      if (s != null) pitchPos = position;
+      // No lipping reading: it needs the ToF to compare against.
+    }
+    _blind = filt == null;
+    _lip = lip;
+
+    final d = SlideData(
+      rawMm: filt != null ? raw!.rawMm : _data.rawMm,
+      filtMm: filt != null ? filt.round() : _data.filtMm,
+      position: position,
+      pitchHz: raw?.pitchHz,
+      hasPiezo: raw?.hasPiezo ?? _data.hasPiezo,
+    );
+    _syncLed(_positionToSlide(d.position));
+    final dt = now.difference(_prevTime).inMicroseconds / 1e6;
+    if (dt > 0.001) {
+      final delta = (d.position - _prevPosition).abs();
+      final rawVel = delta / dt;
+      _velocity = _velocity * (1 - _velocitySmoothing) + rawVel * _velocitySmoothing;
+      if (_velocity * 6.0 >= 0.5) {
+        _totalDistance += delta;
+        _activeSeconds += dt;
+      }
+    }
+    _prevPosition = d.position;
+    _prevTime = now;
+
+    if (_calibrating) {
+      _frames.add((t: now, mm: filt, freq: freq));
+    } else if (_upper.feed(now, filt ?? 0, filt == null ? null : freq,
+            still: _velocity * 6.0 < 0.5) !=
+        null) {
+      // (No ToF: ends any note being listened to; can't learn from it.)
+      _calDirty = true;
+    }
+
+    _posHistory.add(d.position);
+    _pitchHistory.add(pitchPos);
+    if (_posHistory.length > _maxHistory) {
+      _posHistory.removeAt(0);
+      _pitchHistory.removeAt(0);
+    }
+
+    // TEMP diagnostics (debug builds): read with adb logcat -s flutter.
+    if (kDebugMode && ++_diagTick % 6 == 0) {
+      debugPrint('DIAG ${now.millisecondsSinceEpoch % 100000} '
+          'pkt=${raw == null ? 'none' : raw.hasRange ? raw.rawMm : 'noread'} '
+          'filt=${filt?.toStringAsFixed(1) ?? '-'} '
+          'pos=${(1 + 6 * position).toStringAsFixed(2)} '
+          'freq=${freq?.toStringAsFixed(1) ?? '-'} vel=${(_velocity * 6).toStringAsFixed(2)}');
+    }
+    setState(() => _data = d);
+  }
+  int _diagTick = 0;
+
+  /// Offers calibration, once, when the real pod is connected and there is
+  /// no saved calibration (checked after it has finished loading).
+  Future<void> _maybePromptCalibration() async {
+    await _calLoaded;
+    if (!mounted ||
+        _calPrompted ||
+        _calibrating ||
+        !_connected ||
+        _source.isMock ||
+        _cal.calibrated) {
+      return;
+    }
+    _calPrompted = true;
+    _calPrompt = ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('Calibrate your slide so positions read true'),
+      duration: const Duration(seconds: 8),
+      action: SnackBarAction(label: 'Calibrate', onPressed: _openCalibration),
+    ));
+    _calPrompt!.closed.then((_) => _calPrompt = null);
+  }
+
+  void _hideCalPrompt() {
+    _calPrompt?.close();
+    _calPrompt = null;
+  }
+
+  Future<void> _loadCal() => _calLoaded = _doLoadCal();
+
+  Future<void> _doLoadCal() async {
     _prefs ??= await SharedPreferences.getInstance();
     final json = _prefs!.getString(_calKey);
     if (!mounted) return;
@@ -228,15 +341,6 @@ class _HomePageState extends State<HomePage> {
     if (!_calDirty || _prefs == null) return;
     _calDirty = false;
     _prefs!.setString(_calKey, _cal.toJson());
-  }
-
-  void _finishCalibration() {
-    setState(() => _calibrating = false);
-    _calDirty = true;
-    _saveCal();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Calibration saved '
-            '(positions ${_cal.capturedPositions.join(' ')})')));
   }
 
   void _setEasy(bool easy) {
@@ -254,18 +358,34 @@ class _HomePageState extends State<HomePage> {
     _source.setLed(want == 0 ? null : PositionColors.led[want - 1]);
   }
 
-  /// Tap 1: start over and learn from what's played (turns the mic on).
-  /// Tap 2: stop learning and save.
-  Future<void> _toggleCalibration() async {
-    if (_calibrating) {
-      _finishCalibration();
-      return;
-    }
-    setState(() {
-      _cal.reset();
-      _calibrating = true;
-    });
+  /// Opens the guided calibration (turns the mic on). The current
+  /// calibration is kept unless a new one is finished.
+  Future<void> _openCalibration() async {
+    if (_calibrating) return;
+    _hideCalPrompt();
     if (!_micActive && !_source.isMock) await _toggleMic();
+    if (!mounted) return;
+    setState(() => _calibrating = true);
+    _upper.reset();
+    final result = await Navigator.of(context).push<SlideCalibration>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => CalibrationScreen(
+          frames: _frames.stream,
+          onListeningFor: (n) => _mockCalPartial = n,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _calibrating = false;
+      _mockCalPartial = null;
+      if (result != null) _cal.loadJson(result.toJson());
+    });
+    if (result != null) {
+      _calDirty = true;
+      _saveCal();
+    }
   }
 
   Future<void> _startMock() async {
@@ -293,8 +413,11 @@ class _HomePageState extends State<HomePage> {
     // Mock mode fakes _detectedFreq; don't carry it over to the real pod.
     _detectedFreq = null;
     _lip = null;
+    _blind = false;
     _ledSent = -1;
-    _calibrating = false;
+    _upper.reset();
+    _hideCalPrompt();
+    _calPrompted = false; // a different source: offer again if it needs it
     _status = useMock ? 'Mock mode' : 'Tap to connect';
     _listen();
     _loadCal();
@@ -325,6 +448,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _calSaveTimer?.cancel();
     _saveCal();
+    _frames.close();
     _pitchSub?.cancel();
     _pitchDetector.dispose();
     _source.dispose();
@@ -656,26 +780,26 @@ class _HomePageState extends State<HomePage> {
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             _DataChip(
-                                label: 'Raw', value: '${_data.rawMm} mm'),
+                                label: 'Raw',
+                                value: _blind
+                                    ? 'no echo'
+                                    : '${_data.rawMm} mm'),
                             _DataChip(
                                 label: 'Filtered',
                                 value: '${_data.filtMm} mm'),
                             _DataChip(
                                 label: 'Position',
                                 value: _data.position.toStringAsFixed(3)),
-                            // Tap to calibrate by playing; tap again when done.
+                            // Tap to (re)calibrate.
                             GestureDetector(
-                              onTap: _toggleCalibration,
+                              onTap: _openCalibration,
                               child: _DataChip(
-                                  label: !_calibrating
+                                  label: _cal.calibrated
                                       ? 'Cal (tap to redo)'
-                                      : _cal.missingPartials.isEmpty
-                                          ? 'Calibrating: tap to stop'
-                                          : 'Need partials '
-                                              '${_cal.missingPartials.join(' ')}',
-                                  value: _cal.capturedPositions.isEmpty
-                                      ? (_calibrating ? 'play 1st…7th' : 'not set')
-                                      : 'pos ${_cal.capturedPositions.join(' ')}'),
+                                      : 'Cal (tap to set)',
+                                  value: _cal.calibrated
+                                      ? 'upper ${_cal.learnedUpper.length}/4'
+                                      : 'not set'),
                             ),
                           ],
                         ),
