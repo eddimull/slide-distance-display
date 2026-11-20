@@ -37,15 +37,25 @@
     return mock_dist;
   }
   static bool tof_ok() { return true; }
+  static unsigned tof_status_code() { return 0; }
+  static const char *tof_mode_name() { return "sim"; }
 #else
   // Real hardware: VL53L1X, switching mode with distance.
   //
-  // Near (slide in, < 500 mm): Short mode, full 16x16 field of view, 15 ms
+  // Near (slide in, < 500 mm): Short mode, 4x8 ROI, 15 ms
   // timing budget, 19 ms inter-measurement period -> a reading every
   // ~17.6 ms (the sensor's clock runs ~7.5% fast). The period needs ~4 ms
   // of headroom over the budget: with both at 20 ms it skipped every other
   // slot (37 ms), and 15/18 did the same at close range. Measured noise
-  // ~2 mm mid-slide, ~11 mm at 1st.
+  // with the old 16x16 view: ~2 mm mid-slide, ~11 mm at 1st (4x8: 0-2 mm
+  // held in 1st).
+  //
+  // The ROI is 4 wide x 8 tall (of 16x16 SPADs) so the sensor sees only
+  // the narrow slide brace. With the full 16x16 view it saw a second
+  // surface too and flipped between the two every other reading (194/232
+  // mm held still at 3rd, 0/15 mm in 1st; 2026-11-20). Held still at 3rd:
+  // 4x4-4x10 all steady (sd ~1.8 mm); from 4x12 up the second surface
+  // creeps back in. 4x8 tracked a full 1st-7th gliss with no flipping.
   //
   // Far (past 500 mm): the slide crossbar is a weak return out there and
   // Short mode often loses it to the player's hand or the room. Medium mode
@@ -53,9 +63,11 @@
   // more of the hand and room out. Medium needs a 33 ms budget; 37 ms
   // period skipped every other slot, 39 ms didn't; 41 ms -> ~26 readings/s.
   //
-  // Medium read ~35 mm further than Short on the same crossbar at 5th, so
-  // the switch points are kept apart (out at 500, back at 450) to stop the
-  // mode flapping on that step.
+  // With the old 16x16 near view Medium read ~35 mm further than Short at
+  // 5th (likely the second surface, see above). With 4x8 the readings run
+  // straight across every switch, out and back, no step beyond the motion
+  // (slow passes, 2026-11-20). The switch points stay apart (out at 500,
+  // back at 450) so noise at the boundary can't make the modes flap.
   #include <VL53L1X.h>
   VL53L1X tof;
   static constexpr uint16_t TOF_FAR_ABOVE_MM = 500;
@@ -63,6 +75,16 @@
   static constexpr uint8_t TOF_ROI_CENTRE = 199;  // optical centre (col 8, row 8)
   static bool tof_far = false;
   static bool tof_valid = false;
+  static uint8_t tof_status = 0;   // last VL53L1X::RangeStatus
+  static uint8_t tof_misses = 0;   // invalid readings in a row
+
+  // The switch back to near used to need a valid reading under 450 mm, but
+  // with the slide closed Medium can fail every reading, so the pod stuck in
+  // far mode reporting nothing (45 s with the slide in 1st, 2026-11-20).
+  // After this many misses in a row in far mode (~330 ms), go back to
+  // near. Only that way: near rarely fails, and swapping on its misses too
+  // made the modes flap every ~0.5 s around 6th-7th (2026-11-20 capture).
+  static constexpr uint8_t TOF_MISSES_TO_NEAR = 8;
 
   static bool tof_init() {
     tof.setTimeout(500);
@@ -79,30 +101,41 @@
     } else {
       tof.setDistanceMode(VL53L1X::Short);
       tof.setMeasurementTimingBudget(15000);
-      tof.setROISize(16, 16);
+      tof.setROISize(4, 8);
       tof.setROICenter(TOF_ROI_CENTRE);
       tof.startContinuous(19);
     }
     tof_far = far;
-    Serial.printf("# tof %s\n", far ? "far: Medium 6x6" : "near: Short 16x16");
+    tof_misses = 0;
+    Serial.printf("# tof %s\n", far ? "far: Medium 6x6" : "near: Short 4x8");
   }
   static void tof_start() {
     tof_set_far(false);
   }
   static uint16_t tof_read() {
     const uint16_t mm = tof.read();
-    tof_valid = tof.ranging_data.range_status == VL53L1X::RangeValid;
-    // Switch on valid readings only; this one is still reported as is.
+    tof_status = tof.ranging_data.range_status;
+    tof_valid = tof_status == VL53L1X::RangeValid;
+    // Switch on valid readings; this one is still reported as is.
     if (tof_valid) {
+      tof_misses = 0;
       if (!tof_far && mm > TOF_FAR_ABOVE_MM) tof_set_far(true);
       else if (tof_far && mm < TOF_NEAR_BELOW_MM) tof_set_far(false);
+    } else if (tof_far && ++tof_misses >= TOF_MISSES_TO_NEAR) {
+      tof_misses = 0;
+      tof_set_far(false);
     }
     return mm;
   }
   static bool tof_ok() {
     return tof_valid;
   }
+  static unsigned tof_status_code() { return tof_status; }
+  static const char *tof_mode_name() { return tof_far ? "far" : "near"; }
 #endif
+
+// raw_mm sent when the ToF had no valid reading.
+static constexpr uint16_t TOF_NO_READING = 0xFFFF;
 
 // ── Pin assignments ──────────────────────────────────────────────────────
 #ifdef WOKWI_SIM
@@ -317,6 +350,7 @@ static void ble_init() {
 }
 
 // 8-byte LE payload: raw_mm(u16) + filt_mm(u16) + position(u16, 0–10000)
+//   raw_mm = filt_mm = 0xFFFF: no ToF reading this cycle.
 //   filt_mm now repeats raw_mm (filtering moved to the app); the slot is
 //   kept so older app builds still parse the packet.
 //                    + pitch(u16, 0.1 Hz units, 0 = none)
@@ -423,7 +457,14 @@ void loop() {
 
   uint16_t raw = tof_read();
   if (!tof_ok()) {
-    Serial.println("# timeout");
+    // No valid reading (often far out in Medium mode, where the crossbar
+    // is a weak return). Still tell the app, with raw_mm = 0xFFFF, so it
+    // keeps updating (it places the slide from the pitch meanwhile)
+    // instead of freezing until the sensor sees the slide again.
+    ble_notify(TOF_NO_READING, TOF_NO_READING, 0,
+               (uint16_t)(g_pitchHz * 10.0f + 0.5f));
+    Serial.printf("# no reading status=%u mode=%s\n", tof_status_code(),
+                  tof_mode_name());
     return;
   }
 

@@ -12,6 +12,17 @@ void main() {
     expect(find.text('Tap to connect'), findsOneWidget);
   });
 
+  testWidgets('no calibration prompt for the mock, only for a real pod',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(const MaterialApp(home: HomePage(autoMock: true)));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('Calibrate your slide so positions read true'),
+        findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   testWidgets('Easy mode shows only the position and tuning feedback',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({'ui_easy': true});

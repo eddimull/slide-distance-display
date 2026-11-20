@@ -4,6 +4,10 @@ import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 class SlideData {
+  /// Sent as raw_mm when the ToF has no valid reading this cycle (the slide
+  /// out of sight, often far out in Medium mode).
+  static const noReading = 0xFFFF;
+
   final int rawMm;
   final int filtMm;
   final double position;
@@ -14,6 +18,9 @@ class SlideData {
   /// True if the firmware sends pitch at all (8-byte payload). Older
   /// firmware sends 6 bytes.
   final bool hasPiezo;
+
+  /// False when the pod had no ToF reading ([noReading]).
+  bool get hasRange => rawMm != noReading;
 
   const SlideData({
     required this.rawMm,
@@ -90,8 +97,32 @@ class SlidePodMock implements SlidePodSource {
     _holdTicks = 0;
   }
 
+  /// Calibration demo: instead of random moves, repeat a gliss: hold in
+  /// 1st for 1 s, slide out to 7th over 5 s, hold 0.5 s, then go quiet and
+  /// return. [sounding] says when the mock player is blowing.
+  bool get glissMode => _glissTick >= 0;
+  set glissMode(bool on) {
+    if (on == glissMode) return;
+    _glissTick = on ? 0 : -1;
+  }
+
+  int _glissTick = -1; // 20 ms ticks into the gliss cycle; -1 = off
+  static const _glissCycle = 400; // 8 s
+
+  bool get sounding => glissMode && _glissTick < 325;
+
   void _tick(Timer _) {
-    if (_holdTicks > 0) {
+    if (glissMode) {
+      _glissTick = (_glissTick + 1) % _glissCycle;
+      final t = _glissTick;
+      _rawMm = t < 50
+          ? 50
+          : t < 300
+              ? 50 + 500 * (t - 50) / 250
+              : t < 325
+                  ? 550
+                  : 550 - 500 * ((t - 325) / 75).clamp(0.0, 1.0);
+    } else if (_holdTicks > 0) {
       _holdTicks--;
       if (_holdTicks == 0) _pickNewTarget();
     } else {

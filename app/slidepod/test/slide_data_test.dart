@@ -11,6 +11,13 @@ void main() {
     expect(d.pitchHz, isNull);
   });
 
+  test('raw_mm 0xFFFF: the ToF had no reading', () {
+    final d = SlideData.fromBytes([0xff, 0xff, 0xff, 0xff, 0, 0, 0x1a, 0x09]);
+    expect(d.hasRange, isFalse);
+    expect(d.pitchHz, 233.0);
+    expect(SlideData.fromBytes([0x2c, 0x01, 0, 0, 0, 0, 0, 0]).hasRange, isTrue);
+  });
+
   test('8-byte payload: pitch in 0.1 Hz, 0 = silent', () {
     // 2330 → 233.0 Hz (Bb3)
     final d = SlideData.fromBytes([0, 0, 0, 0, 0, 0, 0x1a, 0x09]);
