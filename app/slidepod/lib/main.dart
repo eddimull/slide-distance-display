@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'calibration_screen.dart';
+import 'flash_card_screen.dart';
 import 'gliss_take.dart';
+import 'high_scores.dart';
+import 'learn_screen.dart';
 import 'one_euro.dart';
 import 'pitch_detector.dart';
 import 'position_colors.dart';
@@ -121,8 +124,15 @@ class _HomePageState extends State<HomePage> {
   bool _calDirty = false;
   Timer? _calSaveTimer;
   String get _calKey => _source.isMock ? 'slide_cal_mock' : 'slide_cal';
-  // Recorded takes; opened the first time the Takes screen is.
+  // Recorded takes; opened the first time the Takes tab is.
   Future<TakeStore>? _store;
+  // High scores for the Learn games; opened on first use.
+  Future<HighScores>? _scores;
+  // Bottom tabs: Live, Takes, Learn.
+  int _tab = 0;
+  // Easy mode's "Practise your positions" card, until it's closed.
+  bool _practiceHidden = false;
+  static const _practiceKey = 'ui_practice_card_hidden';
 
   @override
   void initState() {
@@ -131,7 +141,12 @@ class _HomePageState extends State<HomePage> {
     _loadCal();
     SharedPreferences.getInstance().then((p) {
       _prefs ??= p;
-      if (mounted) setState(() => _easy = p.getBool(_easyKey) ?? false);
+      if (mounted) {
+        setState(() {
+          _easy = p.getBool(_easyKey) ?? false;
+          _practiceHidden = p.getBool(_practiceKey) ?? false;
+        });
+      }
     });
     // Samples arrive at 50 Hz; write at most every few seconds.
     _calSaveTimer =
@@ -395,18 +410,60 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// The list of recorded takes, where new ones are recorded from.
-  Future<void> _openTakes() async {
-    final store = await (_store ??= TakeStore.open());
+  /// The Takes tab: recorded takes, where new ones are recorded from.
+  Widget _takesTab() => FutureBuilder<TakeStore>(
+        future: _store ??= TakeStore.open(),
+        builder: (context, snap) {
+          final store = snap.data;
+          if (store == null) {
+            return Center(
+              child: snap.hasError
+                  ? Text('Can\'t open the takes: ${snap.error}')
+                  : const CircularProgressIndicator(),
+            );
+          }
+          return TakesScreen(
+            store: store,
+            cal: _cal,
+            canRecord: _connected,
+            onRecord: ({title}) => _recordTake(store, title: title),
+          );
+        },
+      );
+
+  /// The Learn tab: games for learning the positions.
+  Widget _learnTab() => FutureBuilder<HighScores>(
+        future: _scores ??= HighScores.open(),
+        builder: (context, snap) => snap.data == null
+            ? const Center(child: CircularProgressIndicator())
+            : LearnScreen(
+                learn: LearnContext(
+                    frames: _frames.stream, cal: _cal, scores: snap.data!),
+                connected: _connected,
+              ),
+      );
+
+  /// Straight into the first game, from Easy mode's card.
+  Future<void> _openPractice() async {
+    final scores = await (_scores ??= HighScores.open());
     if (!mounted) return;
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => TakesScreen(
-        store: store,
-        cal: _cal,
-        canRecord: _connected,
-        onRecord: ({title}) => _recordTake(store, title: title),
-      ),
+      builder: (_) =>
+          FlashCardScreen(frames: _frames.stream, cal: _cal, scores: scores),
     ));
+  }
+
+  void _setPracticeHidden(bool hidden) {
+    setState(() => _practiceHidden = hidden);
+    _prefs?.setBool(_practiceKey, hidden);
+    if (!hidden) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: const Text('Hidden. The games are always in Learn.'),
+        action: SnackBarAction(
+            label: 'Undo', onPressed: () => _setPracticeHidden(false)),
+      ));
   }
 
   /// Records one take (turning the mic on for pitch and audio), titled
@@ -609,8 +666,7 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    return Scaffold(
-      body: SafeArea(
+    final live = SafeArea(
         child: Column(
           children: [
             // ── Header ──
@@ -645,11 +701,6 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const Spacer(),
-                  IconButton(
-                    tooltip: 'Takes: record and review',
-                    onPressed: _openTakes,
-                    icon: const Icon(Icons.library_music_outlined),
-                  ),
                   SegmentedButton<bool>(
                     segments: const [
                       ButtonSegment(value: true, label: Text('Easy')),
@@ -712,6 +763,8 @@ class _HomePageState extends State<HomePage> {
                   micActive: _micActive || _source.isMock,
                   isMock: _source.isMock,
                   onMicToggle: _toggleMic,
+                  onPractice: _practiceHidden ? null : _openPractice,
+                  onHidePractice: () => _setPracticeHidden(true),
                 ),
               ),
 
@@ -855,6 +908,28 @@ class _HomePageState extends State<HomePage> {
               ),
           ],
         ),
+    );
+
+    return Scaffold(
+      body: switch (_tab) {
+        1 => _takesTab(),
+        2 => _learnTab(),
+        _ => live,
+      },
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab,
+        onDestinationSelected: (i) => setState(() => _tab = i),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.graphic_eq), label: 'Live'),
+          NavigationDestination(
+              icon: Icon(Icons.library_music_outlined),
+              selectedIcon: Icon(Icons.library_music),
+              label: 'Takes'),
+          NavigationDestination(
+              icon: Icon(Icons.school_outlined),
+              selectedIcon: Icon(Icons.school),
+              label: 'Learn'),
+        ],
       ),
     );
   }
@@ -1068,6 +1143,10 @@ class _EasyView extends StatelessWidget {
   final bool isMock;
   final VoidCallback onMicToggle;
 
+  /// Opens the first Learn game; null hides the card.
+  final VoidCallback? onPractice;
+  final VoidCallback onHidePractice;
+
   const _EasyView({
     required this.slideNum,
     required this.position,
@@ -1076,6 +1155,8 @@ class _EasyView extends StatelessWidget {
     required this.micActive,
     required this.isMock,
     required this.onMicToggle,
+    required this.onPractice,
+    required this.onHidePractice,
   });
 
   static const _ordinals = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th'];
@@ -1172,6 +1253,7 @@ class _EasyView extends StatelessWidget {
                     ],
                   ),
           ),
+          if (onPractice != null) _PracticeCard(onPractice!, onHidePractice),
           const Spacer(),
           if (!isMock)
             IconButton.filledTonal(
@@ -1180,6 +1262,71 @@ class _EasyView extends StatelessWidget {
               icon: Icon(micActive ? Icons.mic : Icons.mic_off),
             ),
           const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+}
+
+/// Easy mode's way into the Learn games, with a close button.
+class _PracticeCard extends StatelessWidget {
+  final VoidCallback onOpen, onHide;
+  const _PracticeCard(this.onOpen, this.onHide);
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: onOpen,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text('5',
+                          style: TextStyle(
+                              fontSize: 28, fontWeight: FontWeight.w300)),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Practise your positions',
+                              style: TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 2),
+                          Text('Position Flash · no playing needed',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey.shade400)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Hide this card',
+            onPressed: onHide,
+            icon: const Icon(Icons.close, size: 20),
+          ),
+          const SizedBox(width: 4),
         ],
       ),
     );

@@ -1,0 +1,167 @@
+import 'dart:math' as math;
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:slidepod/flash_card_game.dart';
+
+/// Drives a round on a fake clock: [semis] is where the slide is.
+class Driver {
+  final FlashCardRound round;
+  int now = 0;
+  double? semis = 0; // 1st
+  Driver([FlashCardRules rules = const FlashCardRules(), int seed = 1])
+      : round = FlashCardRound(rules: rules, rng: math.Random(seed));
+
+  void step(int ms) {
+    final end = now + ms;
+    while (now < end) {
+      now += 20;
+      round.update(now, semis);
+    }
+  }
+
+  /// Starts and runs the countdown until the first card is up.
+  void startToFirstCard() {
+    round.start(now);
+    step(round.rules.countdownMs + 20);
+    expect(round.phase, FlashPhase.card);
+  }
+
+  /// Moves straight to the card's position after [ms] and holds it.
+  void answer(int ms) {
+    final t = round.target!;
+    step(ms);
+    semis = t - 1.0;
+    step(round.rules.holdMs + 40);
+    expect(round.phase, FlashPhase.feedback);
+  }
+
+  /// Through the feedback to the next card (or the end).
+  void next() => step(round.rules.feedbackMs + 20);
+}
+
+void main() {
+  const rules = FlashCardRules();
+
+  test('points: par for the distance, more if faster, capped', () {
+    expect(rules.parMs(1), 700);
+    expect(rules.parMs(6), 1200);
+    expect(rules.points(700, 1), 1000);
+    expect(rules.points(1400, 1), 500);
+    expect(rules.points(100, 1), 1500); // cap
+    expect(rules.points(1200, 6), 1000); // a long move on par is as good
+  });
+
+  test('multiplier: up one every 3 in a row, to ×4', () {
+    expect([0, 1, 2, 3, 5, 6, 9, 30].map(rules.multiplier),
+        [1, 1, 1, 2, 2, 3, 4, 4]);
+  });
+
+  test('countdown, then a card that isn\'t where the slide is', () {
+    final d = Driver();
+    d.round.start(0);
+    d.step(1000);
+    expect(d.round.phase, FlashPhase.countdown);
+    expect(d.round.remainingMs(d.now), closeTo(2000, 20));
+    d.step(2100);
+    expect(d.round.phase, FlashPhase.card);
+    expect(d.round.target, isNot(1));
+  });
+
+  test('never the same card twice running, nor where the slide is', () {
+    for (var seed = 0; seed < 20; seed++) {
+      final d = Driver(rules, seed);
+      d.startToFirstCard();
+      int? last;
+      while (d.round.phase != FlashPhase.done) {
+        final t = d.round.target!;
+        expect(t, isNot(last));
+        expect(t, isNot((1 + d.semis!.round()).clamp(1, 7)));
+        last = t;
+        d.answer(300);
+        d.next();
+      }
+    }
+  });
+
+  test('time counts from arrival, but only once the slide holds there', () {
+    final d = Driver();
+    d.startToFirstCard();
+    final t = d.round.target!;
+    // Swing through the position at 200 ms without stopping...
+    d.step(200);
+    d.semis = t - 1.0;
+    d.step(100);
+    d.semis = t - 1.0 + 0.8;
+    d.step(200);
+    expect(d.round.phase, FlashPhase.card);
+    // ...then come back at 500 ms and hold.
+    d.semis = t - 1.0 + 0.1; // within tolerance
+    d.step(rules.holdMs + 40);
+    expect(d.round.phase, FlashPhase.feedback);
+    final r = d.round.results.single;
+    expect(r.ms, inInclusiveRange(500, 540));
+    expect(r.hit, isTrue);
+  });
+
+  test('a blind sensor breaks the hold', () {
+    final d = Driver();
+    d.startToFirstCard();
+    d.semis = d.round.target! - 1.0;
+    d.step(200);
+    d.semis = null;
+    d.step(200);
+    expect(d.round.phase, FlashPhase.card);
+    expect(d.round.holdProgress(d.now), 0);
+  });
+
+  test('not there in time: missed, no points', () {
+    final d = Driver();
+    d.startToFirstCard();
+    d.step(rules.timeoutMs + 40);
+    expect(d.round.phase, FlashPhase.feedback);
+    final r = d.round.results.single;
+    expect(r.hit, isFalse);
+    expect(r.points, 0);
+  });
+
+  test('combo: three on par makes ×2; a slow card scores ×2 then resets', () {
+    final d = Driver();
+    d.startToFirstCard();
+    for (var i = 0; i < 3; i++) {
+      d.answer(300); // well under any par
+      expect(d.round.results.last.multiplier, 1);
+      d.next();
+    }
+    expect(d.round.combo, 3);
+    expect(d.round.multiplier, 2);
+
+    d.answer(2500); // slower than par
+    final slow = d.round.results.last;
+    expect(slow.multiplier, 2);
+    expect(slow.points, slow.base * 2);
+    expect(slow.brokeCombo, isTrue);
+    expect(d.round.combo, 0);
+    expect(d.round.multiplier, 1);
+    d.next();
+
+    d.step(rules.timeoutMs + 40); // a miss with no combo breaks nothing
+    expect(d.round.results.last.brokeCombo, isFalse);
+    expect(d.round.bestCombo, 3);
+  });
+
+  test('a full round: 10 cards, all fast, reaches ×4', () {
+    final d = Driver();
+    d.startToFirstCard();
+    while (d.round.phase != FlashPhase.done) {
+      d.answer(200);
+      d.next();
+    }
+    final r = d.round.results;
+    expect(r, hasLength(10));
+    expect(r.map((c) => c.multiplier), [1, 1, 1, 2, 2, 2, 3, 3, 3, 4]);
+    expect(d.round.bestCombo, 10);
+    expect(d.round.hits, 10);
+    expect(d.round.score, r.fold<int>(0, (s, c) => s + c.points));
+    expect(d.round.avgMsByPosition().keys, everyElement(inInclusiveRange(1, 7)));
+  });
+}
