@@ -3,9 +3,16 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'calibration_screen.dart';
+import 'gliss_take.dart';
+import 'one_euro.dart';
 import 'pitch_detector.dart';
+import 'position_colors.dart';
+import 'slide_calibration.dart';
 import 'slidepod_ble.dart';
 import 'trombone_chart.dart';
+import 'upper_partials.dart';
 
 void main() => runApp(const SlidePodApp());
 
@@ -69,12 +76,73 @@ class _HomePageState extends State<HomePage> {
   // Pitch history (normalized 0–1 matching position scale)
   final List<double?> _pitchHistory = [];
 
+  // Maps ToF mm → slide position and the horn's partial tuning. The slide
+  // map comes from the guided gliss calibration; the upper partials are
+  // refined from steady notes while playing.
+  final SlideCalibration _cal = SlideCalibration();
+  late final UpperPartialListener _upper = UpperPartialListener(_cal);
+  // Calibration screen open: no background learning, and the readings go
+  // to it through _frames.
+  bool _calibrating = false;
+  final _frames = StreamController<CalFrame>.broadcast();
+  // Mock mode: the partial the calibration screen is asking for.
+  int? _mockCalPartial;
+  bool _calPrompted = false;
+  ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _calPrompt;
+  Future<void> _calLoaded = Future.value();
+  // Easy mode: a limited display for new players learning positions.
+  bool _easy = false;
+  static const _easyKey = 'ui_easy';
+  // Position the pod's LED was last set for: 0 = pod's own colours,
+  // -1 = unknown (resend).
+  int _ledSent = -1;
+  // Latest lipping reading: (partial, cents), + = sharper than the slide.
+  (int, double)? _lip;
+  // Smoothing of the raw ToF reading (the pod sends it unfiltered).
+  final OneEuroFilter _smooth = OneEuroFilter(deadband: 2);
+  // When the pod last sent anything, and last had a ToF reading. Medium
+  // mode sends every ~41 ms, so 100 ms of nothing means it's stuck.
+  DateTime _lastPacket = DateTime.now();
+  DateTime _lastRange = DateTime.now();
+  static const _quietAfter = Duration(milliseconds: 100);
+  // No ToF reading right now: the position comes from the pitch.
+  bool _blind = false;
+  // Mock mode only: the "real" slide geometry the mock pitch is generated
+  // from, deliberately different from the default so calibration has work
+  // to do.
+  static const _mockTrueA = 80.0, _mockTrueB = 1150.0;
+  // Calibration persistence. Mock data has its own fake geometry, so it
+  // gets its own key and never pollutes the real instrument's calibration.
+  SharedPreferences? _prefs;
+  bool _calDirty = false;
+  Timer? _calSaveTimer;
+  String get _calKey => _source.isMock ? 'slide_cal_mock' : 'slide_cal';
+
   @override
   void initState() {
     super.initState();
     _listen();
+    _loadCal();
+    SharedPreferences.getInstance().then((p) {
+      _prefs ??= p;
+      if (mounted) setState(() => _easy = p.getBool(_easyKey) ?? false);
+    });
+    // Samples arrive at 50 Hz; write at most every few seconds.
+    _calSaveTimer =
+        Timer.periodic(const Duration(seconds: 3), (_) => _saveCal());
     _pitchSub = _pitchDetector.pitchStream.listen((freq) {
-      if (mounted) setState(() => _detectedFreq = freq);
+      if (!mounted) return;
+      _detectedFreq = freq;
+      // The pod has gone quiet (the ToF blocking on a reading it can't get,
+      // or older firmware that sends nothing then): let the mic, every
+      // 20 ms, keep the display going from the pitch.
+      if (_connected &&
+          !_source.isMock &&
+          DateTime.now().difference(_lastPacket) > _quietAfter) {
+        _onReading(null);
+      } else {
+        setState(() {});
+      }
     });
     if (widget.autoMock && _source.isMock) {
       _startMock();
@@ -82,60 +150,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _listen() {
-    _source.dataStream.listen((d) {
-      if (!mounted) return;
-      final now = DateTime.now();
-      final dt = now.difference(_prevTime).inMicroseconds / 1e6;
-      if (dt > 0.001) {
-        final delta = (d.position - _prevPosition).abs();
-        final rawVel = delta / dt;
-        _velocity = _velocity * (1 - _velocitySmoothing) + rawVel * _velocitySmoothing;
-        if (_velocity * 7.0 >= 0.5) {
-          _totalDistance += delta;
-          _activeSeconds += dt;
-        }
-      }
-      _prevPosition = d.position;
-      _prevTime = now;
-
-      // Mock pitch: simulate a detected frequency in mock mode
-      if (_source.isMock) {
-        _mockPartialTicks++;
-        if (_mockPartialTicks > 100 + _mockRng.nextInt(150)) {
-          _mockPartial = 2 + _mockRng.nextInt(5); // partials 2–6
-          _mockPartialTicks = 0;
-        }
-        final slide = (d.position * 6 + 1).round().clamp(1, 7);
-        final midi = TromboneChart.midiAt(_mockPartial, slide);
-        final exact = TromboneChart.frequency(midi);
-        // Add ±15 cents of random detuning
-        final centsOff = (_mockRng.nextDouble() - 0.5) * 30;
-        _detectedFreq = exact * math.pow(2, centsOff / 1200);
-      }
-
-      // Track pitch as a normalized position (which slide position the pitch maps to)
-      double? pitchPos;
-      if (_detectedFreq != null && _detectedFreq! > 30) {
-        final slide = (d.position * 6 + 1).round().clamp(1, 7);
-        final (note, c) = TromboneChart.closestAt(slide, _detectedFreq!);
-        if (c.abs() < 100 && note.partial >= 2) {
-          pitchPos = (note.midi - TromboneChart.midiAt(note.partial, 1)).abs() / 6.0;
-        }
-      }
-
-      _posHistory.add(d.position);
-      _pitchHistory.add(pitchPos);
-      if (_posHistory.length > _maxHistory) {
-        _posHistory.removeAt(0);
-        _pitchHistory.removeAt(0);
-      }
-
-      setState(() => _data = d);
+    _source.dataStream.listen((raw) {
+      if (mounted) _onReading(raw);
     });
     _source.connectionStream.listen((c) {
       if (mounted) {
         setState(() {
           _connected = c;
+          _ledSent = -1; // new link: the pod starts on its own colours
           _status = c
               ? (_source.isMock ? 'Mock connected' : 'Connected')
               : (_source.isMock ? 'Mock mode' : 'Disconnected');
@@ -144,11 +166,226 @@ class _HomePageState extends State<HomePage> {
             _totalDistance = 0;
             _activeSeconds = 0;
             _posHistory.clear();
+            _smooth.reset();
             _pitchHistory.clear();
+            _lip = null;
+            _blind = false;
           }
         });
+        if (c) {
+          _maybePromptCalibration();
+        } else {
+          _hideCalPrompt();
+        }
       }
     });
+  }
+
+  /// One update of everything derived from the slide and the pitch. [raw]
+  /// is a packet from the pod, or null when the pod has gone quiet and the
+  /// mic drives the update instead (see [_pitchSub]).
+  ///
+  /// When the ToF has no reading (the pod sends [SlideData.noReading], or
+  /// nothing at all: past 500 mm in Medium mode the crossbar can drop out
+  /// for a while), the slide is placed from the pitch alone, on the partial
+  /// nearest where it was last seen; with no note either it holds.
+  void _onReading(SlideData? raw) {
+    final now = DateTime.now();
+    if (raw != null) _lastPacket = now;
+    double? filt;
+    if (raw != null && raw.hasRange) {
+      // A gap: start the smoothing afresh rather than glide from where the
+      // slide was before it.
+      if (now.difference(_lastRange) > const Duration(milliseconds: 150)) {
+        _smooth.reset();
+      }
+      _lastRange = now;
+      // Smooth the raw reading here (the pod sends it unfiltered), then map
+      // through the calibrated geometry rather than the firmware's guess.
+      filt = _smooth.update(raw.rawMm.toDouble(), now);
+    }
+
+    // Mock pitch: simulate a detected frequency in mock mode
+    final mock = _source is SlidePodMock ? _source as SlidePodMock : null;
+    mock?.glissMode = _mockCalPartial != null;
+    if (_source.isMock && filt != null) {
+      if (_mockCalPartial != null) {
+        _mockPartial = _mockCalPartial!; // play what calibration asks for
+      } else if (++_mockPartialTicks > 100 + _mockRng.nextInt(150)) {
+        _mockPartial = 2 + _mockRng.nextInt(5); // partials 2–6
+        _mockPartialTicks = 0;
+      }
+      // Pitch follows the slide's true (hidden) geometry, on the harmonic
+      // series, with ±10 cents of lipping noise.
+      final x = (filt - _mockTrueA) / _mockTrueB;
+      final semis = 12 * math.log(1 + x) / math.ln2;
+      final centsOff = (_mockRng.nextDouble() - 0.5) * 20;
+      _detectedFreq = _mockPartial *
+          SlideCalibration.f0 /
+          math.pow(2, (semis * 100 - centsOff) / 1200);
+      if (mock != null && mock.glissMode && !mock.sounding) {
+        _detectedFreq = null;
+      }
+    }
+    final freq = raw?.pitchHz ?? _detectedFreq;
+
+    final double position;
+    double? pitchPos;
+    (int, double)? lip;
+    if (filt != null) {
+      position = _cal.positionFromMm(filt);
+      // Pitch → where this horn's slide would be for that note, and how far
+      // that is from where the slide actually is (lipping).
+      if (freq != null && freq > 30) {
+        final hit = _cal.pitchSlide(freq, _cal.semitonesFromMm(filt));
+        if (hit != null) pitchPos = hit.$2 / SlideCalibration.maxSemitones;
+        lip = _cal.lipCents(filt, freq);
+      }
+    } else {
+      final s = _cal.semitonesFromPitchNear(
+          freq, _prevPosition * SlideCalibration.maxSemitones);
+      position = s == null
+          ? _prevPosition
+          : (s / SlideCalibration.maxSemitones).clamp(0.0, 1.0);
+      if (s != null) pitchPos = position;
+      // No lipping reading: it needs the ToF to compare against.
+    }
+    _blind = filt == null;
+    _lip = lip;
+
+    final d = SlideData(
+      rawMm: filt != null ? raw!.rawMm : _data.rawMm,
+      filtMm: filt != null ? filt.round() : _data.filtMm,
+      position: position,
+      pitchHz: raw?.pitchHz,
+      hasPiezo: raw?.hasPiezo ?? _data.hasPiezo,
+    );
+    _syncLed(_positionToSlide(d.position));
+    final dt = now.difference(_prevTime).inMicroseconds / 1e6;
+    if (dt > 0.001) {
+      final delta = (d.position - _prevPosition).abs();
+      final rawVel = delta / dt;
+      _velocity = _velocity * (1 - _velocitySmoothing) + rawVel * _velocitySmoothing;
+      if (_velocity * 6.0 >= 0.5) {
+        _totalDistance += delta;
+        _activeSeconds += dt;
+      }
+    }
+    _prevPosition = d.position;
+    _prevTime = now;
+
+    if (_calibrating) {
+      _frames.add((t: now, mm: filt, freq: freq));
+    } else if (_upper.feed(now, filt ?? 0, filt == null ? null : freq,
+            still: _velocity * 6.0 < 0.5) !=
+        null) {
+      // (No ToF: ends any note being listened to; can't learn from it.)
+      _calDirty = true;
+    }
+
+    _posHistory.add(d.position);
+    _pitchHistory.add(pitchPos);
+    if (_posHistory.length > _maxHistory) {
+      _posHistory.removeAt(0);
+      _pitchHistory.removeAt(0);
+    }
+
+    // TEMP diagnostics (debug builds): read with adb logcat -s flutter.
+    if (kDebugMode && ++_diagTick % 6 == 0) {
+      debugPrint('DIAG ${now.millisecondsSinceEpoch % 100000} '
+          'pkt=${raw == null ? 'none' : raw.hasRange ? raw.rawMm : 'noread'} '
+          'filt=${filt?.toStringAsFixed(1) ?? '-'} '
+          'pos=${(1 + 6 * position).toStringAsFixed(2)} '
+          'freq=${freq?.toStringAsFixed(1) ?? '-'} vel=${(_velocity * 6).toStringAsFixed(2)}');
+    }
+    setState(() => _data = d);
+  }
+  int _diagTick = 0;
+
+  /// Offers calibration, once, when the real pod is connected and there is
+  /// no saved calibration (checked after it has finished loading).
+  Future<void> _maybePromptCalibration() async {
+    await _calLoaded;
+    if (!mounted ||
+        _calPrompted ||
+        _calibrating ||
+        !_connected ||
+        _source.isMock ||
+        _cal.calibrated) {
+      return;
+    }
+    _calPrompted = true;
+    _calPrompt = ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('Calibrate your slide so positions read true'),
+      duration: const Duration(seconds: 8),
+      action: SnackBarAction(label: 'Calibrate', onPressed: _openCalibration),
+    ));
+    _calPrompt!.closed.then((_) => _calPrompt = null);
+  }
+
+  void _hideCalPrompt() {
+    _calPrompt?.close();
+    _calPrompt = null;
+  }
+
+  Future<void> _loadCal() => _calLoaded = _doLoadCal();
+
+  Future<void> _doLoadCal() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    final json = _prefs!.getString(_calKey);
+    if (!mounted) return;
+    setState(() => json == null ? _cal.reset() : _cal.loadJson(json));
+  }
+
+  void _saveCal() {
+    if (!_calDirty || _prefs == null) return;
+    _calDirty = false;
+    _prefs!.setString(_calKey, _cal.toJson());
+  }
+
+  void _setEasy(bool easy) {
+    setState(() => _easy = easy);
+    _prefs?.setBool(_easyKey, easy);
+    _syncLed(_positionToSlide(_data.position));
+  }
+
+  /// In Easy mode the pod's LED shows the position's colour; otherwise the
+  /// pod runs its own status colours. Only writes on change.
+  void _syncLed(int slide) {
+    final want = _easy && _connected ? slide : 0;
+    if (want == _ledSent) return;
+    _ledSent = want;
+    _source.setLed(want == 0 ? null : PositionColors.led[want - 1]);
+  }
+
+  /// Opens the guided calibration (turns the mic on). The current
+  /// calibration is kept unless a new one is finished.
+  Future<void> _openCalibration() async {
+    if (_calibrating) return;
+    _hideCalPrompt();
+    if (!_micActive && !_source.isMock) await _toggleMic();
+    if (!mounted) return;
+    setState(() => _calibrating = true);
+    _upper.reset();
+    final result = await Navigator.of(context).push<SlideCalibration>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => CalibrationScreen(
+          frames: _frames.stream,
+          onListeningFor: (n) => _mockCalPartial = n,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _calibrating = false;
+      _mockCalPartial = null;
+      if (result != null) _cal.loadJson(result.toJson());
+    });
+    if (result != null) {
+      _calDirty = true;
+      _saveCal();
+    }
   }
 
   Future<void> _startMock() async {
@@ -161,6 +398,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _switchSource(bool useMock) {
+    _saveCal();
     _source.disconnect();
     _source.dispose();
     _source = useMock ? SlidePodMock() : SlidePodBle();
@@ -170,9 +408,19 @@ class _HomePageState extends State<HomePage> {
     _totalDistance = 0;
     _activeSeconds = 0;
     _posHistory.clear();
+    _smooth.reset();
     _pitchHistory.clear();
+    // Mock mode fakes _detectedFreq; don't carry it over to the real pod.
+    _detectedFreq = null;
+    _lip = null;
+    _blind = false;
+    _ledSent = -1;
+    _upper.reset();
+    _hideCalPrompt();
+    _calPrompted = false; // a different source: offer again if it needs it
     _status = useMock ? 'Mock mode' : 'Tap to connect';
     _listen();
+    _loadCal();
     setState(() {});
     if (useMock) _startMock();
   }
@@ -185,13 +433,22 @@ class _HomePageState extends State<HomePage> {
         _detectedFreq = null;
       });
     } else {
-      await _pitchDetector.start();
-      setState(() => _micActive = true);
+      try {
+        await _pitchDetector.start();
+        setState(() => _micActive = true);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Mic unavailable: $e')));
+      }
     }
   }
 
   @override
   void dispose() {
+    _calSaveTimer?.cancel();
+    _saveCal();
+    _frames.close();
     _pitchSub?.cancel();
     _pitchDetector.dispose();
     _source.dispose();
@@ -275,25 +532,37 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// Pitch to use: the pod's piezo (immune to room noise) when it hears
+  /// something, otherwise this device's mic (web build only for now).
+  double? get _freq => _data.pitchHz ?? _detectedFreq;
+  String? get _freqSource => _data.pitchHz != null
+      ? 'piezo'
+      : _detectedFreq != null
+          ? 'mic'
+          : null;
+
   int _positionToSlide(double pos) {
-    final raw = pos * 7.0;
-    return raw.round().clamp(1, 7);
+    // pos 0.0 = 1st position, 1.0 = 7th → six intervals, not seven.
+    return (1 + (pos * 6.0).round()).clamp(1, 7);
   }
 
   @override
   Widget build(BuildContext context) {
     final slideNum = _connected ? _positionToSlide(_data.position) : null;
-    final velocityPosPerSec = _velocity * 7.0;
+    // The smoothed speed only decays toward zero, and each small step of the
+    // held position adds a blip; below 0.2 positions/s the slide is still.
+    final velocityPosPerSec = _velocity * 6.0 < 0.2 ? 0.0 : _velocity * 6.0;
     final avgPosPerSec = _activeSeconds > 0.5
-        ? (_totalDistance * 7.0) / _activeSeconds
+        ? (_totalDistance * 6.0) / _activeSeconds
         : 0.0;
 
     // Find active note for tuner display
     ChartNote? activeNote;
     double? activeCents;
-    if (_connected && _detectedFreq != null && _detectedFreq! > 30) {
+    final freq = _freq;
+    if (_connected && freq != null && freq > 30) {
       final slide = slideNum ?? 1;
-      final (note, c) = TromboneChart.closestAt(slide, _detectedFreq!);
+      final (note, c) = TromboneChart.closestAt(slide, freq);
       if (c.abs() < 100 && note.partial >= 2) {
         activeNote = note;
         activeCents = c;
@@ -336,7 +605,21 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const Spacer(),
-                  if (kDebugMode)
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: true, label: Text('Easy')),
+                      ButtonSegment(value: false, label: Text('Full')),
+                    ],
+                    selected: {_easy},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) => _setEasy(s.first),
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  if (kDebugMode) ...[
+                    const SizedBox(width: 8),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -355,6 +638,7 @@ class _HomePageState extends State<HomePage> {
                                 fontSize: 10, color: Colors.grey.shade600)),
                       ],
                     ),
+                  ],
                 ],
               ),
             ),
@@ -373,7 +657,20 @@ class _HomePageState extends State<HomePage> {
               const Spacer(),
             ],
 
-            if (_connected)
+            if (_connected && _easy)
+              Expanded(
+                child: _EasyView(
+                  slideNum: slideNum,
+                  position: _data.position,
+                  activeNote: activeNote,
+                  cents: activeCents,
+                  micActive: _micActive || _source.isMock,
+                  isMock: _source.isMock,
+                  onMicToggle: _toggleMic,
+                ),
+              ),
+
+            if (_connected && !_easy)
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -411,9 +708,10 @@ class _HomePageState extends State<HomePage> {
                                 SizedBox(
                                   height: 70,
                                   width: 120,
+                                  // Replayed sessions peak around 19 pos/s.
                                   child: _Speedometer(
                                     value: velocityPosPerSec,
-                                    maxValue: 5.0,
+                                    maxValue: 20.0,
                                     label: 'Speed',
                                   ),
                                 ),
@@ -423,7 +721,7 @@ class _HomePageState extends State<HomePage> {
                                   width: 120,
                                   child: _Speedometer(
                                     value: avgPosPerSec,
-                                    maxValue: 5.0,
+                                    maxValue: 20.0,
                                     label: 'Avg',
                                   ),
                                 ),
@@ -447,7 +745,9 @@ class _HomePageState extends State<HomePage> {
                         slidePosition: slideNum ?? 1,
                         activeNote: activeNote,
                         cents: activeCents,
-                        freq: _detectedFreq,
+                        lipCents: activeNote != null ? _lip?.$2 : null,
+                        freq: _freq,
+                        freqSource: _freqSource,
                         micActive: _micActive || _source.isMock,
                         isMock: _source.isMock,
                         onMicToggle: _toggleMic,
@@ -480,13 +780,27 @@ class _HomePageState extends State<HomePage> {
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             _DataChip(
-                                label: 'Raw', value: '${_data.rawMm} mm'),
+                                label: 'Raw',
+                                value: _blind
+                                    ? 'no echo'
+                                    : '${_data.rawMm} mm'),
                             _DataChip(
                                 label: 'Filtered',
                                 value: '${_data.filtMm} mm'),
                             _DataChip(
                                 label: 'Position',
                                 value: _data.position.toStringAsFixed(3)),
+                            // Tap to (re)calibrate.
+                            GestureDetector(
+                              onTap: _openCalibration,
+                              child: _DataChip(
+                                  label: _cal.calibrated
+                                      ? 'Cal (tap to redo)'
+                                      : 'Cal (tap to set)',
+                                  value: _cal.calibrated
+                                      ? 'upper ${_cal.learnedUpper.length}/4'
+                                      : 'not set'),
+                            ),
                           ],
                         ),
                       ),
@@ -646,7 +960,9 @@ class _SpeedometerPainter extends CustomPainter {
 
 class _SlideBar extends StatelessWidget {
   final double position;
-  const _SlideBar({required this.position});
+  final bool large;
+  final List<Color>? colors; // per position (Easy mode)
+  const _SlideBar({required this.position, this.large = false, this.colors});
 
   @override
   Widget build(BuildContext context) {
@@ -662,9 +978,13 @@ class _SlideBar extends StatelessWidget {
               return Text(
                 '${i + 1}',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: large ? 22 : 12,
                   fontWeight: active ? FontWeight.bold : FontWeight.normal,
-                  color: active ? Colors.blue : Colors.grey,
+                  color: colors != null
+                      ? colors![i].withValues(alpha: active ? 1 : 0.5)
+                      : active
+                          ? Colors.blue
+                          : Colors.grey,
                 ),
               );
             }),
@@ -674,15 +994,149 @@ class _SlideBar extends StatelessWidget {
         ClipRRect(
           borderRadius: BorderRadius.circular(6),
           child: SizedBox(
-            height: 12,
+            height: large ? 20 : 12,
             child: LinearProgressIndicator(
               value: position.clamp(0.0, 1.0),
               backgroundColor: Colors.grey.shade800,
-              valueColor: const AlwaysStoppedAnimation(Colors.blue),
+              valueColor: AlwaysStoppedAnimation(colors == null
+                  ? Colors.blue
+                  : colors![(position * 6).round().clamp(0, 6)]),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Easy mode ───────────────────────────────────────────────────────────
+
+/// Limited display for new players learning their positions: where the
+/// slide is, and while a note sounds, the note with an arrow showing which
+/// way to tune it. No gauges, charts, raw numbers, cents or lip readout.
+class _EasyView extends StatelessWidget {
+  final int? slideNum;
+  final double position;
+  final ChartNote? activeNote;
+  final double? cents;
+  final bool micActive;
+  final bool isMock;
+  final VoidCallback onMicToggle;
+
+  const _EasyView({
+    required this.slideNum,
+    required this.position,
+    required this.activeNote,
+    required this.cents,
+    required this.micActive,
+    required this.isMock,
+    required this.onMicToggle,
+  });
+
+  static const _ordinals = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th'];
+
+  @override
+  Widget build(BuildContext context) {
+    final hasNote = activeNote != null && cents != null;
+    final c = cents ?? 0;
+    final color = c.abs() < 10
+        ? Colors.green
+        : c.abs() < 25
+            ? Colors.amber
+            : Colors.red;
+    // Flat -> bring the pitch up (slide in); sharp -> down (slide out).
+    final (IconData icon, String hint) = c.abs() < 10
+        ? (Icons.check_circle, 'in tune')
+        : c < 0
+            ? (Icons.arrow_upward, 'slide in')
+            : (Icons.arrow_downward, 'slide out');
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        children: [
+          const Spacer(),
+          Text('Position',
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade500)),
+          SizedBox(
+            height: 150,
+            child: FittedBox(
+              child: Text(
+                slideNum == null ? '-' : _ordinals[slideNum! - 1],
+                style: TextStyle(
+                  fontSize: 140,
+                  fontWeight: FontWeight.w300,
+                  color: slideNum == null
+                      ? Colors.grey
+                      : PositionColors.screen[slideNum! - 1],
+                  height: 1,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SlideBar(
+              position: position, large: true, colors: PositionColors.screen),
+          const Spacer(),
+          // Fixed height whether or not a note is sounding, so nothing jumps.
+          SizedBox(
+            height: 110,
+            child: !hasNote
+                ? Center(
+                    child: Text(
+                      micActive ? 'Play a note' : 'Tap the mic to hear your notes',
+                      style:
+                          TextStyle(fontSize: 22, color: Colors.grey.shade500),
+                    ),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Fixed slot: "Bb3" is wider than "A3", and the
+                      // arrow shouldn't move when the note changes.
+                      SizedBox(
+                        width: 170,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            activeNote!.name,
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 72,
+                              fontWeight: FontWeight.w600,
+                              color: color,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      SizedBox(
+                        width: 90,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(icon, size: 64, color: color),
+                            Text(hint,
+                                style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade400)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          const Spacer(),
+          if (!isMock)
+            IconButton.filledTonal(
+              iconSize: 36,
+              onPressed: onMicToggle,
+              icon: Icon(micActive ? Icons.mic : Icons.mic_off),
+            ),
+          const SizedBox(height: 24),
+        ],
+      ),
     );
   }
 }
@@ -693,7 +1147,9 @@ class _CompactTuner extends StatelessWidget {
   final int slidePosition;
   final ChartNote? activeNote;
   final double? cents;
+  final double? lipCents; // + = played sharper than the slide position gives
   final double? freq;
+  final String? freqSource; // 'piezo' / 'mic'
   final bool micActive;
   final bool isMock;
   final VoidCallback onMicToggle;
@@ -702,7 +1158,9 @@ class _CompactTuner extends StatelessWidget {
     required this.slidePosition,
     required this.activeNote,
     required this.cents,
+    required this.lipCents,
     required this.freq,
+    required this.freqSource,
     required this.micActive,
     required this.isMock,
     required this.onMicToggle,
@@ -736,17 +1194,31 @@ class _CompactTuner extends StatelessWidget {
               width: 60,
               child: Column(
                 children: [
-                  Text(
-                    hasNote ? activeNote!.name : '-',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w600,
-                      height: 1,
-                      color: noteColor,
+                  // Fixed-size slots so a new note never resizes the row.
+                  SizedBox(
+                    height: 32,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        hasNote ? activeNote!.name : '-',
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w600,
+                          height: 1,
+                          color: noteColor,
+                        ),
+                      ),
                     ),
                   ),
                   Text(
-                    hasNote ? '${freq?.toStringAsFixed(1)} Hz' : '',
+                    hasNote
+                        ? '${freq?.toStringAsFixed(1)} Hz'
+                            '${freqSource == 'piezo' ? ' ·pz' : ''}'
+                        : '',
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.clip,
                     style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
                   ),
                 ],
@@ -780,11 +1252,40 @@ class _CompactTuner extends StatelessWidget {
                               fontSize: 9, color: Colors.grey.shade600)),
                     ],
                   ),
-                  if (hasNote)
-                    Text(
-                      '${c >= 0 ? '+' : ''}${c.toStringAsFixed(0)}¢',
-                      style: TextStyle(fontSize: 10, color: noteColor),
-                    ),
+                  // Always laid out (blank when no note) so the bar doesn't
+                  // jump; fixed widths so changing numbers don't shift it.
+                  // Left: tuning vs equal temperament. Right: lipping, i.e.
+                  // the pitch vs what the horn gives where the slide is.
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 56,
+                        child: Text(
+                          hasNote ? _signed(c) : '',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 10, color: noteColor),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 72,
+                        child: Text(
+                          hasNote && lipCents != null
+                              ? 'lip ${_signed(lipCents!)}'
+                              : '',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: lipCents == null || lipCents!.abs() < 10
+                                ? Colors.grey.shade500
+                                : lipCents!.abs() < 25
+                                    ? Colors.amber
+                                    : Colors.red,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -804,22 +1305,27 @@ class _CompactTuner extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        // Note chips
-        Wrap(
-          spacing: 4,
-          runSpacing: 4,
+        // Note chips: one row, each chip an equal share of the width.
+        Row(
           children: [
-            for (final n in displayed)
-              _NoteChip(
-                note: n,
-                active: activeNote?.partial == n.partial,
+            for (var i = 0; i < displayed.length; i++) ...[
+              if (i > 0) const SizedBox(width: 4),
+              Expanded(
+                child: _NoteChip(
+                  note: displayed[i],
+                  active: activeNote?.partial == displayed[i].partial,
+                ),
               ),
+            ],
           ],
         ),
       ],
     );
   }
 }
+
+String _signed(double cents) =>
+    '${cents >= 0 ? '+' : ''}${cents.toStringAsFixed(0)}¢';
 
 class _CentsBarPainter extends CustomPainter {
   final double cents;
@@ -879,7 +1385,7 @@ class _NoteChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final bright = note.partial <= 6;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       decoration: BoxDecoration(
         color: active
             ? Colors.green.shade900
@@ -893,10 +1399,14 @@ class _NoteChip extends StatelessWidget {
               : bright
                   ? Colors.blueGrey.shade600
                   : Colors.blueGrey.shade700,
-          width: active ? 1.5 : 0.5,
+          // Same width active or not, so the chip never changes size.
+          width: 1.5,
         ),
       ),
-      child: Column(
+      // Scale the labels down rather than wrap if the chip gets narrow.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
@@ -923,6 +1433,7 @@ class _NoteChip extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }
