@@ -36,6 +36,14 @@ class _WebPitchDetector implements PitchDetector {
   @override
   Stream<double?> get pitchStream => _controller.stream;
 
+  // The analyser node only gives snapshots, not a continuous stream, so no
+  // audio is recorded on the web.
+  @override
+  Stream<Uint8List> get pcmStream => const Stream.empty();
+
+  @override
+  int get sampleRate => 16000;
+
   @override
   Future<void> start() async {
     final mediaDevices = web.window.navigator.mediaDevices;

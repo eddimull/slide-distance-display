@@ -12,6 +12,7 @@ PitchDetector createPitchDetector() => _MicPitchDetector();
 /// emits a pitch (or null) every 20 ms.
 class _MicPitchDetector implements PitchDetector {
   final _controller = StreamController<double?>.broadcast();
+  final _pcm = StreamController<Uint8List>.broadcast();
   // Created lazily: constructing it touches the platform channel, which
   // doesn't exist in widget tests.
   AudioRecorder? _recorder;
@@ -23,6 +24,12 @@ class _MicPitchDetector implements PitchDetector {
 
   @override
   Stream<double?> get pitchStream => _controller.stream;
+
+  @override
+  Stream<Uint8List> get pcmStream => _pcm.stream;
+
+  @override
+  int get sampleRate => PitchYin.sampleRate.round();
 
   @override
   Future<void> start() async {
@@ -48,6 +55,7 @@ class _MicPitchDetector implements PitchDetector {
   }
 
   void _onChunk(Uint8List bytes) {
+    if (_pcm.hasListener) _pcm.add(bytes);
     var i = 0;
     if (_carry != null && bytes.isNotEmpty) {
       _push(_carry! | (bytes[0] << 8));
@@ -82,5 +90,6 @@ class _MicPitchDetector implements PitchDetector {
     stop();
     _recorder?.dispose();
     _controller.close();
+    _pcm.close();
   }
 }
