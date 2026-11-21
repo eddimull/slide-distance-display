@@ -64,17 +64,23 @@ final learnLevels = <LearnLevel>[
     build: (c) =>
         FlashCardScreen(frames: c.frames, cal: c.cal, scores: c.scores),
   ),
-  const LearnLevel(
+  LearnLevel(
     level: 2,
-    title: 'Coming soon',
-    blurb: 'The next game.',
-    gate: LevelGate(FlashCardScreen.gameId, FlashCardScreen.title, 15000),
+    levelName: noteFlash.levelName,
+    title: noteFlash.title,
+    gameId: noteFlash.id,
+    blurb: 'A note from F2 to F4 comes up on the bass clef: put the slide in '
+        'a position that plays it.',
+    gate: const LevelGate(FlashCardScreen.gameId, FlashCardScreen.title, 15000),
+    build: (c) => FlashCardScreen(
+        frames: c.frames, cal: c.cal, scores: c.scores, spec: noteFlash),
   ),
-  const LearnLevel(
+  LearnLevel(
     level: 3,
     title: 'Coming soon',
     blurb: 'Needs playing: pitch and slide.',
     needsPlaying: true,
+    gate: LevelGate(noteFlash.id, noteFlash.title, 15000),
   ),
 ];
 

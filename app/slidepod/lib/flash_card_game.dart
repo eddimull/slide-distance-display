@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
-/// The rules of Position Flash: a position number is shown, you move the
-/// slide there, and the faster you get there the more it scores. No
+/// The rules of the flash-card games: a card is shown (a position, or a
+/// note), you move the slide to a position that answers it, and the faster you get there the more it scores. No
 /// playing needed, just the slide.
 ///
 /// Cards reached on par or faster build a combo; every [comboStep] in a
@@ -77,9 +77,86 @@ enum FlashPhase {
   done,
 }
 
+/// What a card asks for: [label] to show, and the positions (1–7) that
+/// answer it. A note can have more than one ([NoteDeck]).
+class FlashCard {
+  final String id;
+  final String label;
+  final Set<int> positions;
+
+  /// The note shown, for decks of notes.
+  final int? midi;
+
+  const FlashCard(
+      {required this.id, required this.label, required this.positions, this.midi});
+
+  /// Positions away from [from] to the nearest that answers it.
+  int distanceFrom(int from) =>
+      positions.map((p) => (p - from).abs()).reduce(math.min);
+}
+
+/// Where a round's cards come from.
+abstract class FlashDeck {
+  List<FlashCard> get cards;
+
+  /// The next card: never one the slide already answers, nor the same card
+  /// twice running.
+  FlashCard deal(int from, FlashCard? last, math.Random rng) {
+    final choices = [
+      for (final c in cards)
+        if (!c.positions.contains(from) && c.id != last?.id) c,
+    ];
+    return choices[rng.nextInt(choices.length)];
+  }
+}
+
+/// Level 1: the seven positions, by number.
+class PositionDeck extends FlashDeck {
+  @override
+  final List<FlashCard> cards = [
+    for (var p = 1; p <= 7; p++)
+      FlashCard(id: 'p$p', label: '$p', positions: {p}),
+  ];
+}
+
+/// Level 2: the notes [lowMidi]–[highMidi] (F2–F4), each answered by any
+/// position that plays it on partials [minPartial]–[maxPartial] of a B♭
+/// tenor trombone.
+class NoteDeck extends FlashDeck {
+  static const int lowMidi = 41, highMidi = 65; // F2, F4
+  static const int minPartial = 2, maxPartial = 6;
+
+  /// MIDI note of each partial in 1st position, from the 2nd (B♭2).
+  static const _firstPosition = {2: 46, 3: 53, 4: 58, 5: 62, 6: 65};
+
+  /// Spelled the usual way for trombone (flats).
+  static const _names = [
+    'C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B',
+  ];
+
+  static String noteName(int midi) => '${_names[midi % 12]}${midi ~/ 12 - 1}';
+
+  /// Positions (1–7) that play [midi] on partials 2–6.
+  static Set<int> positionsFor(int midi) => {
+        for (var n = minPartial; n <= maxPartial; n++)
+          if (_firstPosition[n]! - midi case final d when d >= 0 && d <= 6) d + 1,
+      };
+
+  @override
+  final List<FlashCard> cards = [
+    for (var m = lowMidi; m <= highMidi; m++)
+      FlashCard(
+          id: 'n$m', label: noteName(m), positions: positionsFor(m), midi: m),
+  ];
+}
+
 class CardResult {
-  /// Target position (1–7) and the position the slide was at when shown.
-  final int target, from;
+  final FlashCard card;
+
+  /// Where the slide was when it was shown, and the position it went to
+  /// (null = missed).
+  final int from;
+  final int? position;
 
   /// Shown to arrival; null = missed.
   final int? ms;
@@ -94,8 +171,9 @@ class CardResult {
   final bool brokeCombo;
 
   const CardResult({
-    required this.target,
+    required this.card,
     required this.from,
+    required this.position,
     required this.ms,
     required this.base,
     required this.multiplier,
@@ -107,28 +185,32 @@ class CardResult {
   int get points => base * multiplier;
   bool get hit => ms != null;
   bool get onPar => ms != null && ms! <= parMs;
-  int get distance => (target - from).abs();
+  int get distance => card.distanceFrom(from);
 }
 
 /// One round. Feed it the time and where the slide is ([update]); it moves
 /// through the countdown, the cards, and the result of each.
 class FlashCardRound {
   final FlashCardRules rules;
+  final FlashDeck deck;
   final math.Random _rng;
 
-  FlashCardRound({this.rules = const FlashCardRules(), math.Random? rng})
-      : _rng = rng ?? math.Random();
+  FlashCardRound(
+      {this.rules = const FlashCardRules(), FlashDeck? deck, math.Random? rng})
+      : deck = deck ?? PositionDeck(),
+        _rng = rng ?? math.Random();
 
   FlashPhase phase = FlashPhase.idle;
   final results = <CardResult>[];
 
-  /// The card showing (1–7), and when it was shown.
-  int? target;
+  /// The card showing, and when it was shown.
+  FlashCard? card;
   int _shownAt = 0, _from = 1;
   int _phaseEnds = 0;
 
-  /// When the slide entered the target zone (null = not in it).
-  int? _enteredAt;
+  /// When the slide entered an answering position, and which (null = not
+  /// in one).
+  int? _enteredAt, _enteredPos;
 
   /// Position (1–7) nearest the slide, last seen.
   int? _at;
@@ -158,11 +240,10 @@ class FlashCardRound {
     return hit.map((r) => r.ms!).reduce((a, b) => a + b) / hit.length;
   }
 
-  /// Mean arrival time per target position, for "which ones are slow".
-  Map<int, double> avgMsByPosition() {
-    final sums = <int, List<int>>{};
-    for (final r in results) {
-      if (r.hit) (sums[r.target] ??= []).add(r.ms!);
+  static Map<K, double> _mean<K>(Iterable<(K, int)> xs) {
+    final sums = <K, List<int>>{};
+    for (final (k, v) in xs) {
+      (sums[k] ??= []).add(v);
     }
     return {
       for (final e in sums.entries)
@@ -170,18 +251,29 @@ class FlashCardRound {
     };
   }
 
+  /// Mean arrival time per position gone to, for "which ones are slow".
+  Map<int, double> avgMsByPosition() => _mean([
+        for (final r in results)
+          if (r.hit) (r.position!, r.ms!),
+      ]);
+
+  /// Mean arrival time per card (by label), for "which notes are slow".
+  Map<String, double> avgMsByCard() => _mean([
+        for (final r in results)
+          if (r.hit) (r.card.label, r.ms!),
+      ]);
+
   void start(int now) {
     results.clear();
     combo = 0;
     bestCombo = 0;
-    target = null;
+    card = null;
     phase = FlashPhase.countdown;
     _phaseEnds = now + rules.countdownMs;
   }
 
   /// [semis] is the slide's extension (0 = 1st, 6 = 7th), null when the
-  /// sensor has no reading (the slide counts as wherever it last was not:
-  /// a blind sensor can't confirm a hold).
+  /// sensor has no reading (a blind sensor can't confirm a hold).
   void update(int now, double? semis) {
     if (semis != null) _at = (1 + semis.round()).clamp(1, 7);
     switch (phase) {
@@ -198,39 +290,41 @@ class FlashCardRound {
           }
         }
       case FlashPhase.card:
-        final t = target!;
-        final inZone = semis != null && (semis - (t - 1)).abs() <= rules.tolerance;
-        if (inZone) {
-          _enteredAt ??= now;
+        int? zone;
+        if (semis != null) {
+          for (final p in card!.positions) {
+            if ((semis - (p - 1)).abs() <= rules.tolerance) zone = p;
+          }
+        }
+        if (zone != null) {
+          if (zone != _enteredPos) {
+            _enteredAt = now;
+            _enteredPos = zone;
+          }
           if (now - _enteredAt! >= rules.holdMs) {
-            _finish(now, _enteredAt! - _shownAt);
+            _finish(now, _enteredAt! - _shownAt, zone);
             return;
           }
         } else {
           _enteredAt = null;
+          _enteredPos = null;
         }
-        if (now - _shownAt >= rules.timeoutMs) _finish(now, null);
+        if (now - _shownAt >= rules.timeoutMs) _finish(now, null, null);
     }
   }
 
   void _deal(int now) {
-    // Never where the slide already is, nor the same card twice running.
-    final from = _at ?? 1;
-    final last = target;
-    final choices = [
-      for (var p = 1; p <= 7; p++)
-        if (p != from && p != last) p,
-    ];
-    target = choices[_rng.nextInt(choices.length)];
-    _from = from;
+    _from = _at ?? 1;
+    card = deck.deal(_from, card, _rng);
     _shownAt = now;
     _enteredAt = null;
+    _enteredPos = null;
     _phaseEnds = now + rules.timeoutMs;
     phase = FlashPhase.card;
   }
 
-  void _finish(int now, int? ms) {
-    final d = (target! - _from).abs();
+  void _finish(int now, int? ms, int? position) {
+    final d = card!.distanceFrom(_from);
     final par = rules.parMs(d);
     final mult = multiplier;
     final onPar = ms != null && ms <= par;
@@ -238,8 +332,9 @@ class FlashCardRound {
     combo = onPar ? combo + 1 : 0;
     bestCombo = math.max(bestCombo, combo);
     results.add(CardResult(
-      target: target!,
+      card: card!,
       from: _from,
+      position: position,
       ms: ms,
       base: ms == null ? 0 : rules.points(ms, d),
       multiplier: mult,
@@ -248,6 +343,7 @@ class FlashCardRound {
       brokeCombo: !onPar && before > 0,
     ));
     _enteredAt = null;
+    _enteredPos = null;
     phase = FlashPhase.feedback;
     _phaseEnds = now + rules.feedbackMs;
   }

@@ -9,11 +9,65 @@ import 'gliss_take.dart';
 import 'high_scores.dart';
 import 'high_scores_screen.dart';
 import 'slide_calibration.dart';
+import 'staff_note.dart';
 import 'take_style.dart';
 
-/// Position Flash: a number comes up, put the slide there, as fast as you
-/// can, and keep a combo going. Ten cards a round; the score goes on the
-/// high-score table.
+/// One flash-card game: what its cards are and how it's explained.
+class FlashGameSpec {
+  final String id, title;
+  final int level;
+  final String levelName, headline;
+
+  /// The first how-to-play step: (bold, rest).
+  final (String, String) firstStep;
+
+  /// Cards are notes on a staff (else position numbers).
+  final bool notes;
+  final FlashDeck Function() deck;
+
+  const FlashGameSpec({
+    required this.id,
+    required this.title,
+    required this.level,
+    required this.levelName,
+    required this.headline,
+    required this.firstStep,
+    required this.notes,
+    required this.deck,
+  });
+
+  String get levelLabel => 'LEVEL $level · ${levelName.toUpperCase()}';
+}
+
+PositionDeck _positions() => PositionDeck();
+NoteDeck _notes() => NoteDeck();
+
+const positionFlash = FlashGameSpec(
+  id: 'position_flash',
+  title: 'Position Flash',
+  level: 1,
+  levelName: 'Getting started',
+  headline: 'Get to the position, fast',
+  firstStep: ('A number comes up.', 'It\'s the position to go to.'),
+  notes: false,
+  deck: _positions,
+);
+
+const noteFlash = FlashGameSpec(
+  id: 'note_flash',
+  title: 'Note Flash',
+  level: 2,
+  levelName: 'Reading notes',
+  headline: 'Find the note on the slide',
+  firstStep: ('A note comes up, F2 to F4.',
+      'Go to a position that plays it: any one counts.'),
+  notes: true,
+  deck: _notes,
+);
+
+/// A flash-card game ([positionFlash], [noteFlash]): a card comes up, put
+/// the slide where it says, as fast as you can, and keep a combo going.
+/// Ten cards a round; the score goes on the game's high-score table.
 class FlashCardScreen extends StatefulWidget {
   static const gameId = 'position_flash';
   static const title = 'Position Flash';
@@ -23,6 +77,7 @@ class FlashCardScreen extends StatefulWidget {
   final SlideCalibration cal;
   final HighScores scores;
   final FlashCardRules rules;
+  final FlashGameSpec spec;
 
   /// For tests: the round's random cards, and the clock (ms).
   final math.Random? rng;
@@ -34,6 +89,7 @@ class FlashCardScreen extends StatefulWidget {
     required this.cal,
     required this.scores,
     this.rules = const FlashCardRules(),
+    this.spec = positionFlash,
     this.rng,
     this.clock,
   });
@@ -85,8 +141,8 @@ class MultBadge extends StatelessWidget {
 
 class _FlashCardScreenState extends State<FlashCardScreen>
     with SingleTickerProviderStateMixin {
-  late final FlashCardRound _round =
-      FlashCardRound(rules: widget.rules, rng: widget.rng);
+  late final FlashCardRound _round = FlashCardRound(
+      rules: widget.rules, deck: widget.spec.deck(), rng: widget.rng);
   late final Ticker _ticker;
   final _clock = Stopwatch()..start();
   StreamSubscription<CalFrame>? _sub;
@@ -123,7 +179,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
   void _start() {
     _rank = null;
     _submitted = false;
-    _bestBefore = widget.scores.best(FlashCardScreen.gameId)?.score;
+    _bestBefore = widget.scores.best(widget.spec.id)?.score;
     _round.start(_now);
     if (!_ticker.isActive) _ticker.start();
     setState(() {});
@@ -134,7 +190,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
     _submitted = true;
     final avg = _round.avgMs;
     final rank = await widget.scores.submit(
-      FlashCardScreen.gameId,
+      widget.spec.id,
       ScoreEntry(
         score: _round.score,
         at: DateTime.now(),
@@ -148,9 +204,9 @@ class _FlashCardScreenState extends State<FlashCardScreen>
   void _openScores() => Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => HighScoresScreen(
           scores: widget.scores,
-          gameId: FlashCardScreen.gameId,
-          title: FlashCardScreen.title,
-          subtitle: 'Position Flash · Level 1',
+          gameId: widget.spec.id,
+          title: widget.spec.title,
+          subtitle: '${widget.spec.title} · Level ${widget.spec.level}',
         ),
       ));
 
@@ -182,7 +238,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
         title: Text(
             _playing
                 ? 'Card ${_round.results.length + (_round.phase == FlashPhase.card ? 1 : 0)} of ${_r.cards}'
-                : FlashCardScreen.title,
+                : widget.spec.title,
             style: TextStyle(
                 fontSize: _playing ? 13 : 17,
                 fontWeight: _playing ? FontWeight.w400 : FontWeight.w600,
@@ -247,7 +303,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
       );
 
   Widget _intro() {
-    final best = widget.scores.best(FlashCardScreen.gameId);
+    final best = widget.scores.best(widget.spec.id);
     const label = TakeStyle.sectionLabel;
     Widget figure(String v, String l, Color c) => Expanded(
           child: Column(children: [
@@ -263,15 +319,15 @@ class _FlashCardScreenState extends State<FlashCardScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('LEVEL 1 · GETTING STARTED', style: label),
-              SizedBox(height: 4),
-              Text('Get to the position, fast',
-                  style: TextStyle(
+              Text(widget.spec.levelLabel, style: label),
+              const SizedBox(height: 4),
+              Text(widget.spec.headline,
+                  style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.w600,
                       color: TakeStyle.text)),
@@ -286,12 +342,21 @@ class _FlashCardScreenState extends State<FlashCardScreen>
               alignment: Alignment.center,
               decoration: BoxDecoration(
                   color: TakeStyle.chip, borderRadius: BorderRadius.circular(12)),
-              child: const Text('5',
-                  style: TextStyle(
-                      fontSize: 26, fontWeight: FontWeight.w300, color: TakeStyle.text)),
+              child: widget.spec.notes
+                  ? const FittedBox(
+                      child: Padding(
+                        padding: EdgeInsets.all(3),
+                        child: BassClefNote(63, space: 6),
+                      ),
+                    )
+                  : const Text('5',
+                      style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w300,
+                          color: TakeStyle.text)),
             ),
-            'A number comes up.',
-            'It\'s the position to go to.'),
+            widget.spec.firstStep.$1,
+            widget.spec.firstStep.$2),
         const SizedBox(height: 8),
         _step(
             const SizedBox(
@@ -418,8 +483,9 @@ class _FlashCardScreenState extends State<FlashCardScreen>
   }
 
   Widget _card() {
-    final target = _round.target!;
+    final card = _round.card!;
     final feedback = _round.phase == FlashPhase.feedback;
+    final ring = widget.spec.notes ? 270.0 : 240.0;
     final last = feedback ? _round.results.last : null;
     final at = _semis == null ? null : (1 + _semis!.round()).clamp(1, 7);
     String detail = '';
@@ -447,8 +513,8 @@ class _FlashCardScreenState extends State<FlashCardScreen>
         Expanded(
           child: Center(
             child: SizedBox(
-              width: 240,
-              height: 240,
+              width: ring,
+              height: ring,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -466,20 +532,30 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('$target',
-                          semanticsLabel: 'Position $target',
-                          style: const TextStyle(
-                              fontSize: 140,
-                              fontWeight: FontWeight.w300,
-                              height: 1,
-                              color: TakeStyle.text)),
+                      if (widget.spec.notes) ...[
+                        BassClefNote(card.midi!, space: 13),
+                        Text(prettyNote(card.label),
+                            semanticsLabel: 'Note ${card.label}',
+                            style: const TextStyle(
+                                fontSize: 30,
+                                fontWeight: FontWeight.w500,
+                                color: TakeStyle.text)),
+                      ] else
+                        Text(card.label,
+                            semanticsLabel: 'Position ${card.label}',
+                            style: const TextStyle(
+                                fontSize: 140,
+                                fontWeight: FontWeight.w300,
+                                height: 1,
+                                color: TakeStyle.text)),
                       SizedBox(
                         height: 24,
                         child: last == null
                             ? null
                             : Text(
                                 last.hit
-                                    ? '${seconds(last.ms!)} · +${last.points}'
+                                    ? '${widget.spec.notes ? '${ordinalPos(last.position!)} · ' : ''}'
+                                        '${seconds(last.ms!)} · +${last.points}'
                                     : 'Missed',
                                 style: TakeStyle.mono.copyWith(
                                     fontSize: 18,
@@ -500,6 +576,12 @@ class _FlashCardScreenState extends State<FlashCardScreen>
             ),
           ),
         ),
+        if (widget.spec.notes)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: Text('Any position that plays it counts.',
+                style: TextStyle(fontSize: 13, color: TakeStyle.muted)),
+          ),
         // Where the slide is: the seven positions, the nearest lit.
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
@@ -531,6 +613,82 @@ class _FlashCardScreenState extends State<FlashCardScreen>
   }
 
   // ── Results ──
+
+  /// The notes that took longest, where they were found, and where else
+  /// they could have been.
+  List<Widget> _slowNotes() {
+    final by = _round.avgMsByCard();
+    if (by.isEmpty) return const [];
+    final slow = by.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final top = slow.take(3).toList();
+    /// Positions [label] was found in this round.
+    Set<int> used(String label) => {
+          for (final r in _round.results)
+            if (r.hit && r.card.label == label) r.position!,
+        };
+    String where(String label) =>
+        'found in ${used(label).map(ordinalPos).join(', ')}';
+
+    // "E3 is also in 7th": the other positions of the slow notes.
+    final elsewhere = <String>[];
+    for (final e in top) {
+      final card = _round.results.firstWhere((r) => r.card.label == e.key).card;
+      final others = (card.positions.difference(used(e.key)).toList()..sort());
+      if (others.isEmpty) continue;
+      elsewhere.add(
+          '${prettyNote(e.key)} is also in ${others.map(ordinalPos).join(' and ')}');
+    }
+    return [
+      const SizedBox(height: 18),
+      const Text('NOTES THAT TOOK LONGEST', style: TakeStyle.sectionLabel),
+      const SizedBox(height: 8),
+      Container(
+        decoration: BoxDecoration(
+            color: TakeStyle.card, borderRadius: BorderRadius.circular(14)),
+        child: Column(
+          children: [
+            for (final (i, e) in top.indexed)
+              Container(
+                constraints: const BoxConstraints(minHeight: 48),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  border: i == 0
+                      ? null
+                      : const Border(top: BorderSide(color: TakeStyle.chip)),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 56,
+                      child: Text(prettyNote(e.key),
+                          style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              color: TakeStyle.text)),
+                    ),
+                    Expanded(
+                      child: Text(where(e.key),
+                          style:
+                              const TextStyle(fontSize: 13, color: TakeStyle.body)),
+                    ),
+                    Text(seconds(e.value),
+                        style: TakeStyle.mono.copyWith(
+                            fontSize: 13, color: const Color(0xFFFFCC80))),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+      if (elsewhere.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Text(
+            '${elsewhere.join('; ')}: any position counts, and the nearer one '
+            'scores better.',
+            style: const TextStyle(fontSize: 13, height: 1.45, color: TakeStyle.muted)),
+      ],
+    ];
+  }
 
   Widget _results() {
     final avg = _round.avgMs;
@@ -609,7 +767,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 6,
           crossAxisSpacing: 6,
-          childAspectRatio: 1.05,
+          childAspectRatio: widget.spec.notes ? 0.85 : 1.05,
           children: [
             for (final c in _round.results)
               Container(
@@ -620,10 +778,18 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text('${c.target}',
+                    Text(prettyNote(c.card.label),
                         style: TextStyle(
-                            fontSize: 20,
+                            fontSize: widget.spec.notes ? 15 : 20,
+                            fontWeight:
+                                widget.spec.notes ? FontWeight.w500 : FontWeight.w400,
                             color: c.hit ? TakeStyle.body : const Color(0xFFEF9A9A))),
+                    if (widget.spec.notes && c.hit)
+                      Text(ordinalPos(c.position!),
+                          style: TakeStyle.mono.copyWith(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: TakeStyle.position(c.position!))),
                     Text(c.hit ? seconds(c.ms!) : 'missed',
                         style: TakeStyle.mono.copyWith(
                             fontSize: 10,
@@ -641,7 +807,8 @@ class _FlashCardScreenState extends State<FlashCardScreen>
               ),
           ],
         ),
-        if (byPos.isNotEmpty) ...[
+        if (widget.spec.notes) ..._slowNotes(),
+        if (byPos.isNotEmpty && !widget.spec.notes) ...[
           const SizedBox(height: 18),
           const Text('TIME TO FIND EACH POSITION', style: label),
           const SizedBox(height: 8),

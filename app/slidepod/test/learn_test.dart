@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:slidepod/flash_card_game.dart';
 import 'package:slidepod/flash_card_screen.dart';
+import 'package:slidepod/staff_note.dart';
 import 'package:slidepod/gliss_take.dart';
 import 'package:slidepod/high_scores.dart';
 import 'package:slidepod/high_scores_screen.dart';
@@ -59,15 +61,17 @@ void main() {
   });
 
   group('unlocking', () {
-    test('Level 2 opens at 15,000 in Position Flash; Level 3 waits for a game',
+    test('Level 2 opens at 15,000 in Position Flash, Level 3 at 15,000 in Note Flash',
         () async {
       final s = await freshScores();
       expect(unlockedLevels(learnLevels, s), [true, false, false]);
       await s.submit(FlashCardScreen.gameId, entry(14999));
       expect(unlockedLevels(learnLevels, s), [true, false, false]);
       await s.submit(FlashCardScreen.gameId, entry(15000));
-      // Level 2 has no game yet, so Level 3 stays shut.
       expect(unlockedLevels(learnLevels, s), [true, true, false]);
+      // Level 3 opens at 15,000 in Note Flash, but has no game yet.
+      await s.submit(noteFlash.id, entry(15000));
+      expect(unlockedLevels(learnLevels, s), [true, true, true]);
     });
 
     testWidgets('the hub shows progress toward the next level', (tester) async {
@@ -159,4 +163,58 @@ void main() {
     expect(find.text('Best'), findsOneWidget);
     await frames.close();
   });
+
+  testWidgets('Note Flash: a note on the staff; any position that plays it',
+      (tester) async {
+    tall(tester);
+    final scores = await freshScores();
+    final cal = SlideCalibration();
+    final frames = StreamController<CalFrame>.broadcast();
+    var now = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: FlashCardScreen(
+          frames: frames.stream,
+          cal: cal,
+          scores: scores,
+          spec: noteFlash,
+          clock: () => now),
+    ));
+    expect(find.text('LEVEL 2 · READING NOTES'), findsOneWidget);
+
+    Future<void> slideTo(double semis) async {
+      frames.add((t: DateTime.now(), mm: mmAtSemis(cal, semis), freq: null));
+      await tester.pump();
+    }
+
+    final deck = NoteDeck();
+    FlashCard shown() => deck.cards.firstWhere((c) => tester
+        .widgetList<Text>(find.byType(Text))
+        .any((t) => t.style?.fontSize == 30 && t.data == c.label));
+
+    await slideTo(0);
+    await tester.tap(find.text('Start'));
+    await tester.pump();
+    now += 3100;
+    await slideTo(0);
+    expect(find.byType(BassClefNote), findsOneWidget);
+    expect(find.text('Any position that plays it counts.'), findsOneWidget);
+
+    for (var card = 0; card < 10; card++) {
+      final c = shown();
+      final p = (c.positions.toList()..sort()).last; // the far one is fine too
+      now += 400;
+      await slideTo(p - 1.0);
+      now += 320;
+      await slideTo(p - 1.0);
+      expect(find.textContaining(ordinalPos(p)), findsWidgets, reason: c.label);
+      now += 720;
+      await slideTo(p - 1.0);
+    }
+    await tester.pump();
+    expect(find.text('NOTES THAT TOOK LONGEST'), findsOneWidget);
+    expect(scores.best(noteFlash.id)!.detail, startsWith('10/10'));
+    expect(scores.best(FlashCardScreen.gameId), isNull); // its own table
+    await frames.close();
+  });
 }
+
