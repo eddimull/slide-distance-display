@@ -19,7 +19,7 @@ Future<void> tall(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('review: summary, moves, notes; tap a note to loop it',
+  testWidgets('review: summary, moves, notes; tap a move to loop its note',
       (tester) async {
     await tall(tester);
     await tester.pumpWidget(MaterialApp(
@@ -32,9 +32,8 @@ void main() {
     expect(find.text('E♭4'), findsWidgets);
     expect(find.textContaining('No audio with this take'), findsOneWidget);
 
-    // The notes list row for E♭4 (the last of its matches: moves list
-    // first says "into E♭4").
-    await tester.tap(find.text('E♭4').last);
+    // Tapping a slide move loops its note.
+    await tester.tap(find.text('into E♭4'));
     await tester.pump();
     expect(find.text('Looping E♭4'), findsOneWidget);
   });

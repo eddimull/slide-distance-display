@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:just_audio/just_audio.dart';
 
+import 'note_detail_screen.dart';
+import 'reference_tone.dart';
 import 'slide_calibration.dart';
 import 'take.dart';
 import 'take_analysis.dart';
@@ -13,8 +15,8 @@ import 'take_style.dart';
 import 'take_timeline.dart';
 
 /// One take, analysed: the timeline, playback at any speed from 0.1× to
-/// 1.5× (pitch held), each slide move and each note. Tapping a note selects
-/// it, seeks to it and loops it.
+/// 1.5× (pitch held), each slide move and each note. Tapping a move selects
+/// its note and loops it; tapping a note opens its breakdown.
 class ReviewScreen extends StatefulWidget {
   final Take take;
   final SlideCalibration cal;
@@ -43,6 +45,7 @@ class _ReviewScreenState extends State<ReviewScreen>
   AudioPlayer? _player;
   bool _hasAudio = false;
   StreamSubscription<PlayerState>? _stateSub;
+  final _tone = ReferenceTonePlayer();
 
   int _pos = 0; // on the take's clock
   bool _playing = false;
@@ -97,6 +100,7 @@ class _ReviewScreenState extends State<ReviewScreen>
   @override
   void dispose() {
     _ticker.dispose();
+    _tone.dispose();
     _stateSub?.cancel();
     _player?.dispose();
     super.dispose();
@@ -155,6 +159,33 @@ class _ReviewScreenState extends State<ReviewScreen>
       if (_selected != null) _loopOn = true;
     });
     if (_selected != null) _seek(_loop!.$1);
+  }
+
+  /// The selected note, else the one under (or last before) the playhead.
+  NoteAnalysis? get _currentNote {
+    if (_selected != null) return _a.notes[_selected!];
+    NoteAnalysis? last;
+    for (final n in _a.notes) {
+      if (n.startMs > _pos) break;
+      last = n;
+    }
+    return last ?? (_a.notes.isEmpty ? null : _a.notes.first);
+  }
+
+  Future<void> _openNote(NoteAnalysis n) async {
+    if (_playing) _pause();
+    final loopSlow = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => NoteDetailScreen(
+          analysis: _a, note: n, cal: widget.cal, store: widget.store),
+    ));
+    if (loopSlow != true || !mounted) return;
+    setState(() {
+      _selected = n.index;
+      _loopOn = true;
+    });
+    _setSpeed(0.25);
+    _seek(_loop!.$1);
+    _play();
   }
 
   void _stepNote(int dir) {
@@ -283,7 +314,7 @@ class _ReviewScreenState extends State<ReviewScreen>
             _moves(),
           ],
           if (_a.notes.isNotEmpty) ...[
-            _heading('Notes', 'Tap a note to loop it'),
+            _heading('Notes', 'Tap a note for its breakdown'),
             _notes(),
           ],
         ],
@@ -423,7 +454,15 @@ class _ReviewScreenState extends State<ReviewScreen>
                 onPressed: () => _stepNote(1),
                 icon: const Icon(Icons.skip_next_rounded, color: TakeStyle.text),
               ),
-              const SizedBox(width: 48),
+              IconButton(
+                tooltip: _currentNote == null
+                    ? 'Hear the note in tune'
+                    : 'Hear ${noteName(_currentNote!.midi)} in tune',
+                onPressed: _currentNote == null
+                    ? null
+                    : () => _tone.play(_currentNote!.midi),
+                icon: const Icon(Icons.music_note_outlined, color: TakeStyle.muted),
+              ),
             ],
           ),
           if (!_hasAudio)
@@ -685,7 +724,7 @@ class _ReviewScreenState extends State<ReviewScreen>
           children: [
             for (final n in _a.notes)
               InkWell(
-                onTap: () => _selectNote(n.index),
+                onTap: () => _openNote(n),
                 child: Container(
                   constraints: const BoxConstraints(minHeight: 52),
                   padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -733,6 +772,8 @@ class _ReviewScreenState extends State<ReviewScreen>
                       ),
                       const Spacer(),
                       TakeTag(TakeStyle.causeTag(n)),
+                      const Icon(Icons.chevron_right,
+                          size: 18, color: TakeStyle.muted),
                     ],
                   ),
                 ),

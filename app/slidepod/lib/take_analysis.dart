@@ -245,6 +245,43 @@ class TakeAnalysis {
       : shifts.map((s) => s.durationMs).reduce((a, b) => a + b) /
           shifts.length;
 
+  // ── Traces, for charts ──
+
+  /// Slide readings `(ms, semitones)` from [fromMs] to [toMs].
+  List<(int, double)> slideTrace(int fromMs, int toMs) => [
+        for (final f in take.frames)
+          if (f.semis != null && f.tMs >= fromMs && f.tMs <= toMs)
+            (f.tMs, f.semis!),
+      ];
+
+  /// Pitch over [note] as cents from its equal-tempered note, on the slide's
+  /// clock (the pitch lag taken out).
+  List<(int, double)> centsTrace(NoteAnalysis note) {
+    final out = <(int, double)>[];
+    for (final f in take.frames) {
+      if (f.freq == null || f.freq! <= 30) continue;
+      final t = f.tMs - config.pitchLagMs;
+      if (t < note.startMs || t > note.endMs) continue;
+      final m = 69 + 12 * math.log(f.freq! / 440) / math.ln2;
+      final c = 100 * (m - note.midi);
+      if (c.abs() < 100) out.add((t, c));
+    }
+    return out;
+  }
+
+  /// The pitch error the slide alone gives at each reading over [note]
+  /// (landing further out than this horn's spot = flat), to compare with
+  /// [centsTrace]. Empty when the note has no target.
+  List<(int, double)> slideCentsTrace(NoteAnalysis note) {
+    final target = note.targetSemis;
+    if (target == null) return const [];
+    final reach = math.max(target, 0.0);
+    return [
+      for (final (t, s) in slideTrace(note.startMs, note.endMs))
+        (t, -100 * (s - reach)),
+    ];
+  }
+
   // ── Analysis ──
 
   static TakeAnalysis analyze(Take take, SlideCalibration cal,
