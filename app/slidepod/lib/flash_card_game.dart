@@ -210,6 +210,16 @@ class CardResult {
 
   int get points => (base + bonus) * multiplier;
   bool get inTune => bonus > 0;
+
+  /// This card as the server's round log has it (the server re-scores the
+  /// round from these; see slidepod-server's RoundScorer).
+  Map<String, Object?> toLog() => {
+        'card': card.id,
+        'from': from,
+        'position': position,
+        'ms': ms,
+        'cents': cents,
+      };
   bool get hit => ms != null;
   bool get onPar => ms != null && ms! <= parMs;
   int get distance => card.distanceFrom(from);
@@ -390,7 +400,9 @@ class FlashCardRound {
     double? cents;
     if (ms != null && _holdCents.isNotEmpty) {
       final sorted = List.of(_holdCents)..sort();
-      cents = sorted[sorted.length ~/ 2];
+      // To 0.01¢, as logged for the server, so both decide the bonus on
+      // the same number.
+      cents = (sorted[sorted.length ~/ 2] * 100).roundToDouble() / 100;
     }
     results.add(CardResult(
       card: card!,
