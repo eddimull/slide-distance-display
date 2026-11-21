@@ -121,8 +121,8 @@ void main() {
       home: TakesScreen(
         store: store,
         cal: cal,
-        onRecord: () async {
-          final t = synthScaleTake()..title = 'Scale';
+        onRecord: ({title}) async {
+          final t = synthScaleTake()..title = title ?? 'Scale';
           await store.save(t, null);
           return t;
         },
@@ -138,5 +138,53 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(find.text('Scale'), findsOneWidget);
+  });
+
+  testWidgets('review: record again keeps the title and replaces the review',
+      (tester) async {
+    await tall(tester);
+    final store = MemoryTakeStore();
+    final first = synthScaleTake()..title = 'B♭ scale';
+    await store.save(first, null);
+    final titles = <String?>[];
+    await tester.pumpWidget(MaterialApp(
+      home: TakesScreen(
+        store: store,
+        cal: cal,
+        onRecord: ({title}) async {
+          titles.add(title);
+          final t = Take(
+              id: 'second',
+              title: title ?? 'x',
+              started: first.started.add(const Duration(minutes: 1)),
+              frames: first.frames);
+          await store.save(t, null);
+          return t;
+        },
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('B♭ scale'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Share take'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Record another take'));
+    await tester.pumpAndSettle();
+    expect(titles, ['B♭ scale']);
+    expect(find.byType(ReviewScreen), findsOneWidget);
+
+    // Back from the new review goes straight to the list, now with both.
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('B♭ scale'), findsNWidgets(2));
+  });
+
+  testWidgets('review: no record button when recording isn\'t possible',
+      (tester) async {
+    await tall(tester);
+    await tester.pumpWidget(MaterialApp(
+        home: ReviewScreen(take: synthScaleTake(), cal: cal)));
+    await tester.pump();
+    expect(find.byTooltip('Record another take'), findsNothing);
   });
 }

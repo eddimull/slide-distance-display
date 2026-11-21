@@ -404,13 +404,14 @@ class _HomePageState extends State<HomePage> {
         store: store,
         cal: _cal,
         canRecord: _connected,
-        onRecord: () => _recordTake(store),
+        onRecord: ({title}) => _recordTake(store, title: title),
       ),
     ));
   }
 
-  /// Records one take (turning the mic on for pitch and audio).
-  Future<Take?> _recordTake(TakeStore store) async {
+  /// Records one take (turning the mic on for pitch and audio), titled
+  /// [title] when it's another take of a piece.
+  Future<Take?> _recordTake(TakeStore store, {String? title}) async {
     if (!_micActive && !_source.isMock) await _toggleMic();
     if (!mounted) return null;
     return Navigator.of(context).push<Take>(MaterialPageRoute(
@@ -422,6 +423,7 @@ class _HomePageState extends State<HomePage> {
         cal: _cal,
         store: store,
         hearing: _micActive || _source.isMock || _data.hasPiezo,
+        title: title,
       ),
     ));
   }

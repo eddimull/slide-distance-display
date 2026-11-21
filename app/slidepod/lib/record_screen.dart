@@ -26,6 +26,9 @@ class RecordScreen extends StatefulWidget {
   /// True when pitch is coming in (mic on, piezo, or mock).
   final bool hearing;
 
+  /// Title for the take (another take of a piece); null = by the time.
+  final String? title;
+
   const RecordScreen({
     super.key,
     required this.frames,
@@ -34,6 +37,7 @@ class RecordScreen extends StatefulWidget {
     required this.cal,
     required this.store,
     this.hearing = true,
+    this.title,
   });
 
   @override
@@ -96,7 +100,7 @@ class _RecordScreenState extends State<RecordScreen> {
     String two(int v) => v.toString().padLeft(2, '0');
     final (take, wav) = _finished ??= _rec.finish(
       id: TakeStore.newId(s),
-      title: 'Take ${two(s.hour)}:${two(s.minute)}',
+      title: widget.title ?? 'Take ${two(s.hour)}:${two(s.minute)}',
     );
     try {
       await widget.store.save(take, wav);

@@ -76,7 +76,7 @@ void main() {
       await store.save(scaleAt(m), null);
     }
     await tester.pumpWidget(MaterialApp(
-        home: TakesScreen(store: store, cal: cal, onRecord: () async => null)));
+        home: TakesScreen(store: store, cal: cal, onRecord: ({title}) async => null)));
     await tester.pumpAndSettle();
     expect(find.text('SCALE · LAST 3 TAKES'), findsOneWidget);
     final inTune = synthScale().inTuneCount;

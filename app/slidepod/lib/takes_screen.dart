@@ -17,8 +17,9 @@ class TakesScreen extends StatefulWidget {
   final TakeStore store;
   final SlideCalibration cal;
 
-  /// Records a take and returns it, or null if it was discarded.
-  final Future<Take?> Function() onRecord;
+  /// Records a take (titled [title] when given) and returns it, or null if
+  /// it was discarded.
+  final Future<Take?> Function({String? title}) onRecord;
 
   /// False when the pod isn't connected: recording is disabled.
   final bool canRecord;
@@ -70,8 +71,13 @@ class _TakesScreenState extends State<TakesScreen> {
 
   Future<void> _review(Take take) async {
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) =>
-          ReviewScreen(take: take, cal: widget.cal, store: widget.store),
+      builder: (_) => ReviewScreen(
+        take: take,
+        cal: widget.cal,
+        store: widget.store,
+        onRecordAgain:
+            widget.canRecord ? (title) => widget.onRecord(title: title) : null,
+      ),
     ));
     _refresh(); // it may have been renamed
   }

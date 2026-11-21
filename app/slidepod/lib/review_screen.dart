@@ -10,6 +10,7 @@ import 'reference_tone.dart';
 import 'slide_calibration.dart';
 import 'take.dart';
 import 'take_analysis.dart';
+import 'take_export.dart';
 import 'take_store.dart';
 import 'take_style.dart';
 import 'take_timeline.dart';
@@ -22,11 +23,16 @@ class ReviewScreen extends StatefulWidget {
   final SlideCalibration cal;
   final TakeStore? store;
 
+  /// Records another take under this one's title (so the trend and the
+  /// note history follow the piece); null when recording isn't possible.
+  final Future<Take?> Function(String title)? onRecordAgain;
+
   const ReviewScreen({
     super.key,
     required this.take,
     required this.cal,
     this.store,
+    this.onRecordAgain,
   });
 
   static const double minSpeed = 0.1, maxSpeed = 1.5, speedStep = 0.05;
@@ -205,6 +211,35 @@ class _ReviewScreenState extends State<ReviewScreen>
     _seek(_selected != null ? _loop!.$1 : notes[i].startMs);
   }
 
+  Future<void> _share(BuildContext button) async {
+    if (_playing) _pause();
+    final box = button.findRenderObject() as RenderBox?;
+    final origin =
+        box == null ? null : box.localToGlobal(Offset.zero) & box.size;
+    try {
+      await shareTake(_a, widget.store, origin: origin);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Couldn\'t share: $e')));
+    }
+  }
+
+  /// Another take of the same piece; its review replaces this one.
+  Future<void> _recordAgain() async {
+    if (_playing) _pause();
+    final next = await widget.onRecordAgain!(widget.take.title);
+    if (next == null || !mounted) return;
+    Navigator.of(context).pushReplacement(MaterialPageRoute(
+      builder: (_) => ReviewScreen(
+        take: next,
+        cal: widget.cal,
+        store: widget.store,
+        onRecordAgain: widget.onRecordAgain,
+      ),
+    ));
+  }
+
   Future<void> _rename() async {
     final ctl = TextEditingController(text: widget.take.title);
     final title = await showDialog<String>(
@@ -251,18 +286,39 @@ class _ReviewScreenState extends State<ReviewScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(take.title,
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(take.title,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w600)),
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(Icons.edit_outlined,
+                      size: 14, color: TakeStyle.muted),
+                ],
+              ),
               Text('$when · ${(take.durationMs / 1000).toStringAsFixed(1)} s',
                   style: const TextStyle(fontSize: 12, color: TakeStyle.muted)),
             ],
           ),
         ),
         actions: [
-          IconButton(
-              tooltip: 'Rename',
-              onPressed: _rename,
-              icon: const Icon(Icons.edit_outlined)),
+          if (widget.onRecordAgain != null)
+            IconButton(
+              tooltip: 'Record another take',
+              onPressed: _recordAgain,
+              icon: const Icon(Icons.fiber_manual_record_outlined,
+                  color: TakeStyle.record),
+            ),
+          Builder(
+            builder: (button) => IconButton(
+              tooltip: 'Share take',
+              onPressed: () => _share(button),
+              icon: const Icon(Icons.ios_share),
+            ),
+          ),
         ],
       ),
       body: ListView(
