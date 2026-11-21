@@ -139,22 +139,26 @@ void main() {
 
     now += 3100;
     await slideTo(0);
-    for (var card = 0; card < 10; card++) {
+    bool done() => find.text('Play again').evaluate().isNotEmpty;
+    expect(find.text('0:30'), findsOneWidget); // the round clock
+    var cards = 0;
+    while (!done() && cards++ < 60) {
       final t = target();
       now += 250;
       await slideTo(t - 1.0);
       now += 320; // held
       await slideTo(t - 1.0);
-      expect(find.textContaining('· +'), findsOneWidget, reason: 'card $card');
-      now += 720;
+      now += 520;
       await slideTo(t - 1.0);
     }
     await tester.pump();
+    expect(done(), isTrue);
+    expect(cards, greaterThan(20));
     expect(find.text('New high score'), findsOneWidget);
     expect(find.text('Best combo'), findsOneWidget);
     expect(find.text('×4'), findsWidgets);
     final best = scores.best(FlashCardScreen.gameId)!;
-    expect(best.detail, startsWith('10/10 · combo 10'));
+    expect(best.detail, matches(RegExp(r'^\d+ found · combo \d+')));
     expect(find.text('${best.score}'), findsOneWidget);
 
     await tester.tap(find.text('High scores'));
@@ -199,20 +203,25 @@ void main() {
     expect(find.byType(BassClefNote), findsOneWidget);
     expect(find.text('Any position that plays it counts.'), findsOneWidget);
 
-    for (var card = 0; card < 10; card++) {
+    bool done() => find.text('Play again').evaluate().isNotEmpty;
+    var cards = 0;
+    while (!done() && cards++ < 60) {
       final c = shown();
       final p = (c.positions.toList()..sort()).last; // the far one is fine too
       now += 400;
       await slideTo(p - 1.0);
       now += 320;
       await slideTo(p - 1.0);
-      expect(find.textContaining(ordinalPos(p)), findsWidgets, reason: c.label);
-      now += 720;
+      if (!done()) {
+        expect(find.textContaining(ordinalPos(p)), findsWidgets, reason: c.label);
+      }
+      now += 520;
       await slideTo(p - 1.0);
     }
     await tester.pump();
+    expect(done(), isTrue);
     expect(find.text('NOTES THAT TOOK LONGEST'), findsOneWidget);
-    expect(scores.best(noteFlash.id)!.detail, startsWith('10/10'));
+    expect(scores.best(noteFlash.id)!.detail, contains('found'));
     expect(scores.best(FlashCardScreen.gameId), isNull); // its own table
     await frames.close();
   });

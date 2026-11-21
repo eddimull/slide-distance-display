@@ -9,8 +9,9 @@ import 'dart:math' as math;
 /// A card slower than par scores at the current multiplier and then resets
 /// the combo; a miss scores nothing and resets it.
 class FlashCardRules {
-  /// Cards in a round.
-  final int cards;
+  /// How long a round lasts, from the first card: as many cards as you can.
+  /// A card still up when it runs out doesn't count either way.
+  final int roundMs;
 
   /// Within this many positions of the target counts as there.
   final double tolerance;
@@ -37,12 +38,12 @@ class FlashCardRules {
   final int comboStep, maxMultiplier;
 
   const FlashCardRules({
-    this.cards = 10,
+    this.roundMs = 30000,
     this.tolerance = 0.3,
     this.holdMs = 300,
     this.timeoutMs = 6000,
     this.countdownMs = 3000,
-    this.feedbackMs = 700,
+    this.feedbackMs = 500,
     this.parBaseMs = 600,
     this.parPerPositionMs = 100,
     this.parPoints = 1000,
@@ -208,6 +209,9 @@ class FlashCardRound {
   int _shownAt = 0, _from = 1;
   int _phaseEnds = 0;
 
+  /// When the round's clock runs out (set as the first card is dealt).
+  int? _roundEnds;
+
   /// When the slide entered an answering position, and which (null = not
   /// in one).
   int? _enteredAt, _enteredPos;
@@ -224,6 +228,10 @@ class FlashCardRound {
 
   /// Time left on the countdown / card, for the screen.
   int remainingMs(int now) => math.max(0, _phaseEnds - now);
+
+  /// Time left in the round (all of it before the first card).
+  int roundRemainingMs(int now) =>
+      _roundEnds == null ? rules.roundMs : math.max(0, _roundEnds! - now);
 
   /// 0–1 of the way into the current hold (for a progress ring).
   double holdProgress(int now) => _enteredAt == null
@@ -268,6 +276,7 @@ class FlashCardRound {
     combo = 0;
     bestCombo = 0;
     card = null;
+    _roundEnds = null;
     phase = FlashPhase.countdown;
     _phaseEnds = now + rules.countdownMs;
   }
@@ -282,14 +291,18 @@ class FlashCardRound {
         return;
       case FlashPhase.countdown:
       case FlashPhase.feedback:
-        if (now >= _phaseEnds) {
-          if (results.length >= rules.cards) {
-            phase = FlashPhase.done;
-          } else {
-            _deal(now);
-          }
+        if (_roundEnds != null && now >= _roundEnds!) {
+          phase = FlashPhase.done;
+        } else if (now >= _phaseEnds) {
+          _roundEnds ??= now + rules.roundMs;
+          _deal(now);
         }
       case FlashPhase.card:
+        if (now >= _roundEnds!) {
+          // Time's up mid-card: it doesn't count.
+          phase = FlashPhase.done;
+          return;
+        }
         int? zone;
         if (semis != null) {
           for (final p in card!.positions) {

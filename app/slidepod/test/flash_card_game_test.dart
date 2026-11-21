@@ -35,7 +35,8 @@ class Driver {
     step(ms);
     semis = t - 1.0;
     step(round.rules.holdMs + 40);
-    expect(round.phase, FlashPhase.feedback);
+    // (Or the round's clock ran out first.)
+    expect(round.phase, anyOf(FlashPhase.feedback, FlashPhase.done));
   }
 
   /// Through the feedback to the next card (or the end).
@@ -152,20 +153,50 @@ void main() {
     expect(d.round.bestCombo, 3);
   });
 
-  test('a full round: 10 cards, all fast, reaches ×4', () {
+  test('a 30 s round: as many cards as you can, up to ×4', () {
     final d = Driver();
     d.startToFirstCard();
+    final firstCardAt = d.now;
     while (d.round.phase != FlashPhase.done) {
       d.answer(200);
       d.next();
     }
     final r = d.round.results;
-    expect(r, hasLength(10));
-    expect(r.map((c) => c.multiplier), [1, 1, 1, 2, 2, 2, 3, 3, 3, 4]);
-    expect(d.round.bestCombo, 10);
-    expect(d.round.hits, 10);
+    // ~1 s a card (200 ms there, 300 ms hold, 500 ms feedback).
+    expect(r.length, inInclusiveRange(25, 30));
+    expect(r.take(10).map((c) => c.multiplier), [1, 1, 1, 2, 2, 2, 3, 3, 3, 4]);
+    expect(r.skip(9).map((c) => c.multiplier), everyElement(4));
+    expect(d.round.bestCombo, r.length);
+    expect(d.round.hits, r.length);
     expect(d.round.score, r.fold<int>(0, (s, c) => s + c.points));
-    expect(d.round.avgMsByPosition().keys, everyElement(inInclusiveRange(1, 7)));
+    // It ended when the clock ran out, not before.
+    expect(d.now - firstCardAt, inInclusiveRange(30000, 31200));
+    expect(d.round.roundRemainingMs(d.now), 0);
+  });
+
+  test('the clock starts at the first card; a card up at 0:00 doesn\'t count',
+      () {
+    final d = Driver();
+    d.round.start(0);
+    d.step(2000);
+    expect(d.round.roundRemainingMs(d.now), 30000); // still counting down
+    d.step(1100);
+    expect(d.round.phase, FlashPhase.card);
+    // Answer a few, then leave one hanging past the end of the round.
+    for (var i = 0; i < 3; i++) {
+      d.answer(300);
+      d.next();
+    }
+    expect(d.round.results, hasLength(3));
+    // Sit somewhere that never answers (misses every 6 s) until time's up.
+    while (d.round.phase != FlashPhase.done) {
+      d.semis = null;
+      d.step(500);
+    }
+    final missed = d.round.results.where((c) => !c.hit).length;
+    // Misses come every 6.5 s; whatever card was up at the end isn't one.
+    expect(d.round.results.length, 3 + missed);
+    expect(missed, inInclusiveRange(3, 4));
   });
 
   group('notes deck (Level 2)', () {

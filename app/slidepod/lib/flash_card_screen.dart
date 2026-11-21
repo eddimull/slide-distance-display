@@ -67,7 +67,7 @@ const noteFlash = FlashGameSpec(
 
 /// A flash-card game ([positionFlash], [noteFlash]): a card comes up, put
 /// the slide where it says, as fast as you can, and keep a combo going.
-/// Ten cards a round; the score goes on the game's high-score table.
+/// Rounds last 30 seconds; the score goes on the game's high-score table.
 class FlashCardScreen extends StatefulWidget {
   static const gameId = 'position_flash';
   static const title = 'Position Flash';
@@ -99,6 +99,12 @@ class FlashCardScreen extends StatefulWidget {
 }
 
 String seconds(num ms) => '${(ms / 1000).toStringAsFixed(2)} s';
+
+/// The round clock: "0:23".
+String clockSeconds(int ms) {
+  final s = (ms / 1000).ceil();
+  return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+}
 
 String ordinalPos(int p) => switch (p) {
       1 => '1st',
@@ -194,7 +200,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
       ScoreEntry(
         score: _round.score,
         at: DateTime.now(),
-        detail: '${_round.hits}/${_r.cards} · combo ${_round.bestCombo}'
+        detail: '${_round.hits} found · combo ${_round.bestCombo}'
             '${avg == null ? '' : ' · avg ${seconds(avg)}'}',
       ),
     );
@@ -235,14 +241,21 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                 onPressed: () => Navigator.of(context).maybePop(),
               )
             : null,
-        title: Text(
-            _playing
-                ? 'Card ${_round.results.length + (_round.phase == FlashPhase.card ? 1 : 0)} of ${_r.cards}'
-                : widget.spec.title,
-            style: TextStyle(
-                fontSize: _playing ? 13 : 17,
-                fontWeight: _playing ? FontWeight.w400 : FontWeight.w600,
-                color: _playing ? TakeStyle.muted : TakeStyle.text)),
+        title: _playing
+            ? Text(clockSeconds(_round.roundRemainingMs(_now)),
+                semanticsLabel:
+                    '${(_round.roundRemainingMs(_now) / 1000).ceil()} seconds left',
+                style: TakeStyle.mono.copyWith(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                    color: _round.roundRemainingMs(_now) <= 5000
+                        ? TakeStyle.warn
+                        : TakeStyle.text))
+            : Text(widget.spec.title,
+                style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: TakeStyle.text)),
         actions: [
           if (_playing) ...[
             _ComboPips(_round.combo, _round.multiplier, _r.comboStep, _r.maxMultiplier),
@@ -408,7 +421,8 @@ class _FlashCardScreenState extends State<FlashCardScreen>
               const SizedBox(height: 10),
               Text(
                   'Par is longer for bigger moves, so a 1st → 7th card is as '
-                  'fair as 3rd → 4th. ${_r.cards} cards a round.',
+                  'fair as 3rd → 4th. ${_r.roundMs ~/ 1000} seconds a round: '
+                  'as many cards as you can.',
                   style: const TextStyle(
                       fontSize: 12, height: 1.45, color: TakeStyle.muted)),
               const Divider(height: 24, color: TakeStyle.line),
@@ -503,7 +517,8 @@ class _FlashCardScreenState extends State<FlashCardScreen>
           child: ClipRRect(
             borderRadius: BorderRadius.circular(2),
             child: LinearProgressIndicator(
-              value: feedback ? 0 : _round.remainingMs(_now) / _r.timeoutMs,
+              // The round's clock.
+              value: _round.roundRemainingMs(_now) / _r.roundMs,
               minHeight: 4,
               backgroundColor: TakeStyle.line,
               color: TakeStyle.muted,
@@ -742,7 +757,11 @@ class _FlashCardScreenState extends State<FlashCardScreen>
           children: [
             Expanded(
                 child: StatTile(
-                    value: '${_round.hits}', unit: '/${_r.cards}', label: 'Found')),
+                    value: '${_round.hits}',
+                    unit: _round.results.length > _round.hits
+                        ? '/${_round.results.length}'
+                        : null,
+                    label: 'Found')),
             const SizedBox(width: 8),
             Expanded(
                 child: StatTile(
