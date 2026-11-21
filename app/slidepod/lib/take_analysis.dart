@@ -48,6 +48,10 @@ class ShiftAnalysis {
   /// slide first stopped, and where it rested for the note.
   final double peakError, firstStopError, landedError;
 
+  /// When the slide was furthest along, and when it first stopped (for
+  /// marking an overshoot or a short stop on a timeline).
+  final int extremeMs, firstStopMs;
+
   final ShiftResult result;
 
   /// Arrival relative to the note's start: negative = the slide got there
@@ -67,6 +71,8 @@ class ShiftAnalysis {
     required this.peakError,
     required this.firstStopError,
     required this.landedError,
+    required this.extremeMs,
+    required this.firstStopMs,
     required this.result,
     required this.settleAfterOnsetMs,
     required this.toBumper,
@@ -447,6 +453,8 @@ class TakeAnalysis {
         peakError: e,
         firstStopError: e,
         landedError: e,
+        extremeMs: noteStart,
+        firstStopMs: noteStart,
         result: e < -c.slideTol
             ? ShiftResult.short
             : e > c.slideTol && !toBumper
@@ -467,8 +475,17 @@ class TakeAnalysis {
     final startMs = win[startI].tMs;
 
     // Furthest point in the direction of travel.
-    final during = slide.valuesIn(startMs, noteEnd);
-    final extreme = dir > 0 ? during.reduce(math.max) : during.reduce(math.min);
+    var extreme = dir > 0 ? -double.infinity : double.infinity;
+    var extremeMs = startMs;
+    for (final (t, s) in slide.points) {
+      if (t < startMs) continue;
+      if (t > noteEnd) break;
+      if (dir * s > dir * extreme) {
+        extreme = s;
+        extremeMs = t;
+      }
+    }
+    if (!extreme.isFinite) extreme = landed;
     final peakErr = dir * (extreme - target);
     final firstStop = slide.at(win[stopI].tMs) ?? landed;
     final firstErr = dir * (firstStop - target);
@@ -507,6 +524,8 @@ class TakeAnalysis {
       peakError: peakErr,
       firstStopError: firstErr,
       landedError: landedErr,
+      extremeMs: extremeMs,
+      firstStopMs: win[stopI].tMs,
       result: result,
       settleAfterOnsetMs: arrive - noteStart,
       toBumper: toBumper,

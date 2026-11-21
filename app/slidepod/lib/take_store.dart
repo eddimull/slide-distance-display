@@ -9,9 +9,12 @@ typedef TakeSummary = ({String id, String title, DateTime started, int durationM
 
 /// Saved takes: each is `<id>.json` plus `<id>.wav` when it has audio.
 abstract class TakeStore {
-  /// The app's own store (documents directory on the phone). Null where
-  /// takes can't be saved (web).
-  static Future<TakeStore?> open() => impl.openTakeStore();
+  /// The app's own store: files in the documents directory on the phone,
+  /// or a [MemoryTakeStore] where files can't be written (web).
+  static Future<TakeStore> open() => impl.openTakeStore();
+
+  /// False when takes are lost when the app closes.
+  bool get persistent;
 
   Future<void> save(Take take, Uint8List? wav);
   Future<List<TakeSummary>> list();
@@ -29,4 +32,30 @@ abstract class TakeStore {
         '${two(u.hour)}${two(u.minute)}${two(u.second)}-'
         '${u.millisecond.toString().padLeft(3, '0')}';
   }
+}
+
+/// Takes kept for this run of the app only (web build).
+class MemoryTakeStore implements TakeStore {
+  final _takes = <String, Take>{};
+
+  @override
+  bool get persistent => false;
+
+  @override
+  Future<void> save(Take take, Uint8List? wav) async => _takes[take.id] = take;
+
+  @override
+  Future<List<TakeSummary>> list() async => [
+        for (final t in _takes.values)
+          (id: t.id, title: t.title, started: t.started, durationMs: t.durationMs),
+      ]..sort((a, b) => b.started.compareTo(a.started));
+
+  @override
+  Future<Take?> load(String id) async => _takes[id];
+
+  @override
+  Future<String?> audioPath(Take take) async => null;
+
+  @override
+  Future<void> delete(String id) async => _takes.remove(id);
 }

@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'take.dart';
 import 'take_store.dart';
 
-Future<TakeStore?> openTakeStore() async {
+Future<TakeStore> openTakeStore() async {
   final docs = await getApplicationDocumentsDirectory();
   return FileTakeStore(Directory('${docs.path}/takes'));
 }
@@ -15,6 +15,9 @@ Future<TakeStore?> openTakeStore() async {
 class FileTakeStore implements TakeStore {
   final Directory dir;
   FileTakeStore(this.dir);
+
+  @override
+  bool get persistent => true;
 
   File _json(String id) => File('${dir.path}/$id.json');
 
