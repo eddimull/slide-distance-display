@@ -14,6 +14,7 @@ Position offsets are in mm in CPL coordinates (kicad-cli negates Y vs. KiCad boa
 Re-verify both tables in the placement preview on each new order.
 """
 import csv
+import math
 import sys
 from collections import OrderedDict
 
@@ -35,13 +36,26 @@ LCSC_ROT_OFFSET = {
     "C190004": 180,  # VL53L1CX LGA-12: CPL 0 → 180
 }
 
-# X/Y position offsets (mm) in CPL coordinates (kicad-cli negates Y vs. KiCad board).
-# Keyed on designator. Applied when the JLCPCB part model origin differs from the
-# KiCad footprint origin. Re-verify in the placement preview on each order.
+# X/Y position offsets (mm) in CPL coordinates (kicad-cli negates Y vs. KiCad board),
+# for when the JLCPCB part model origin differs from the KiCad footprint origin.
+# Keyed on designator: ((dx, dy), rot) where rot is the CPL rotation (from kicad-cli, before
+# LCSC_ROT_OFFSET) the offset was measured at. The offset is a property of the part, so it is
+# turned with the part: rev 0.2 turned J1 by 180 deg vs rev 0.1, which flips its offset.
+# Top-side parts only (calibrated on the top). Re-verify in the placement preview on each order.
 CPL_XY_OFFSET = {
-    "U1": (0.0, -2.5),   # ESP32-S3-MINI-1: model origin shifted toward antenna end
-    "J1": (1.1,  0.0),   # USB-C TYPE-C-31-M-12: signal pins sat 1.1 mm short of pads
-}
+    "U1": ((0.0, -2.5), 0),     # ESP32-S3-MINI-1: model origin shifted toward antenna end
+    "J1": ((1.1,  0.0), -90),   # USB-C TYPE-C-31-M-12: signal pins sat 1.1 mm short of pads
+}                               #   (toward the mouth), measured with the mouth facing -X
+
+
+def xy_offset(ref, rot):
+    """CPL offset for ref placed at CPL rotation rot (CCW-positive, CPL axes are Y-up)."""
+    if ref not in CPL_XY_OFFSET:
+        return 0.0, 0.0
+    (dx, dy), rot0 = CPL_XY_OFFSET[ref]
+    a = math.radians(rot - rot0)
+    c, s = round(math.cos(a), 9), round(math.sin(a), 9)
+    return dx * c - dy * s, dx * s + dy * c
 
 parts = {p.ref: p for p in circuit.PARTS}
 b = pcbnew.LoadBoard("/work/slidepod.kicad_pcb")
@@ -82,7 +96,9 @@ with open("/work/fab/slidepod-pos.csv") as f, open("/work/fab/slidepod-cpl.csv",
             continue
         lcsc = parts[ref].lcsc
         rot = (float(row["Rot"]) + LCSC_ROT_OFFSET.get(lcsc, 0)) % 360
-        dx, dy = CPL_XY_OFFSET.get(ref, (0.0, 0.0))
+        if ref in CPL_XY_OFFSET and row["Side"] != "top":
+            raise SystemExit(f"{ref}: CPL_XY_OFFSET is calibrated for the top side only")
+        dx, dy = xy_offset(ref, float(row["Rot"]))
         x = float(row["PosX"]) + dx
         y = float(row["PosY"]) + dy
         w.writerow([ref, f"{x:.6f}mm", f"{y:.6f}mm",

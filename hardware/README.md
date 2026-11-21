@@ -28,7 +28,7 @@ board stands as a thin "fin" perpendicular to the slide tubes:
 - The accelerometer is soldered to the board, which the clamp holds against the tube, so the
   tube's vibration reaches it through the mount. No wired pickup.
 
-Current outline: **30 × 50 mm**, 4-layer, 1.0 mm thick, single-sided assembly. It can shrink later by moving parts to the back side, but JLC charges more for double-sided assembly.
+Current outline (rev 0.2): **32 × 26 mm**, 4-layer, 1.0 mm thick, **double-sided assembly** (the front holds only what must be seen or reached; the rest is on the back). Rev 0.1 was 30 × 50 mm, single-sided. Ordering steps: `fab/JLCPCB_ORDER.md`.
 
 ## Block diagram
 
