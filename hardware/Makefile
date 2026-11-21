@@ -1,4 +1,4 @@
-# SlidePod hardware pipeline. Everything runs in the kicad/kicad:9.0 container.
+# SlidePod hardware pipeline. Everything runs in KiCad 10 under Docker (tools/kicad.sh).
 # Edit tools/circuit.py (parts + nets) or tools/gen_pcb.py (placement), then `make`.
 K = tools/kicad.sh
 
@@ -31,7 +31,7 @@ fab:
 	mkdir -p fab/gerbers
 	$(K) kicad-cli pcb export gerbers --board-plot-params -o fab/gerbers/ slidepod.kicad_pcb
 	$(K) kicad-cli pcb export drill --format excellon --excellon-separate-th -o fab/gerbers/ slidepod.kicad_pcb
-	$(K) kicad-cli pcb export pos --format csv --units mm --side front --exclude-dnp -o fab/slidepod-pos.csv slidepod.kicad_pcb
+	$(K) kicad-cli pcb export pos --format csv --units mm --side both --exclude-dnp -o fab/slidepod-pos.csv slidepod.kicad_pcb
 	$(K) python3 tools/export_jlc.py
 	cd fab/gerbers && rm -f ../slidepod-gerbers.zip && zip -q ../slidepod-gerbers.zip *
 

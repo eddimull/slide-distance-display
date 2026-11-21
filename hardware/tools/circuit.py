@@ -43,7 +43,7 @@ def C(ref, val, a, b, block, fp=C0402, **k):
 # ---------------------------------------------------------------- USB / charger / power
 P("J1", "Connector:USB_C_Receptacle_USB2.0_16P", "USB-C",
   "Connector_USB:USB_C_Receptacle_HRO_TYPE-C-31-M-12",
-  {**{p: "GND" for p in ("A1", "A12", "B1", "B12", "S1")},
+  {**{p: "GND" for p in ("A1", "A12", "B1", "B12", "SH")},
    **{p: "VBUS" for p in ("A4", "A9", "B4", "B9")},
    "A5": "CC1", "B5": "CC2", "A6": "USB_DP", "B6": "USB_DP", "A7": "USB_DM", "B7": "USB_DM"},
   "power", lcsc="C165948")
@@ -62,9 +62,11 @@ R("R4", "1k", "VBUS", "CHG_LED_A", "power")
 P("D3", "Device:LED", "CHG red", "LED_SMD:LED_0603_1608Metric",
   {"2": "CHG_LED_A", "1": "CHG_STAT"}, "power", lcsc="C2286")
 
-P("J2", "Connector_Generic:Conn_01x02", "LiPo 1S", "Connector_JST:JST_PH_S2B-PH-SM4-TB_1x02-1MP_P2.00mm_Horizontal",
-  {"1": "VBAT", "2": "GND"}, "power", lcsc="C295747",
-  note="Check battery lead polarity, JST-PH vendors differ")
+# rev 0.2: JST-SH 1.0 mm (was JST-PH 2.0 mm), and pin 1 is now GND: the rev 0.1 battery
+# needed its leads reversed. Battery lead pinouts still vary by vendor: meter before plugging.
+P("J2", "Connector_Generic:Conn_01x02", "LiPo 1S", "Connector_JST:JST_SH_SM02B-SRSS-TB_1x02-1MP_P1.00mm_Horizontal",
+  {"1": "GND", "2": "VBAT"}, "power", lcsc="C160402",
+  note="JST SM02B-SRSS-TB; pin 1 GND, pin 2 VBAT. Check battery lead polarity before plugging in")
 
 # Power path: VBUS via Schottky, battery via P-FET (off while VBUS present)
 P("D2", "Device:D_Schottky", "B5819W", "Diode_SMD:D_SOD-123", {"1": "VSYS_IN", "2": "VBUS"}, "power",
@@ -87,10 +89,21 @@ R("R8", "100k", "VBUS", "VBUS_SENSE", "power")
 R("R9", "100k", "VBUS_SENSE", "GND", "power", note="5 V -> 2.5 V")
 
 # ---------------------------------------------------------------- MCU
+# rev 0.2: ToF, LED and IMU lines sit on the module's right edge and bottom-right corner, next to
+# the parts they drive; on the left-edge pins they crossed the whole board and blocked routing.
+# The ToF and the IMU have separate I2C buses (the S3 has two controllers): one shared bus had to
+# run from the ToF above the LEDs to the IMU below them and could not be routed past the LEDs.
+# Order along the edge follows the parts' order, so the traces fan out without crossing:
+#   LEDs (level with pins 36-38), ToF (round the LEDs' right side, up to U2), IMU (bottom corner).
+# GPIO = module pin: IO42=38 LED_R, IO41=37 LED_G, IO40=36 LED_B, IO39=35 TOF_SCL,
+# IO38=34 TOF_SDA, IO37=33 TOF_INT, IO36=32 TOF_XSHUT, IO35=31 IMU_SCL, IO48=30 IMU_SDA,
+# IO34=29 IMU_INT. IO33-37 are free on the -N8 (no PSRAM); IO39-42 are JTAG pins, unused while
+# debugging over USB. Firmware must match: src/slidepod/main.cpp, SLIDEPOD_REV 2.
 esp = {"3": "+3V3", "45": "EN", "4": "BOOT",
-       "5": "PIEZO_ADC", "6": "VBAT_SENSE", "8": "TOF_INT", "9": "TOF_XSHUT",
-       "12": "I2C_SDA", "13": "I2C_SCL", "14": "VBUS_SENSE",
-       "15": "LED_R", "16": "LED_G", "17": "LED_B",
+       "6": "VBAT_SENSE", "14": "VBUS_SENSE",
+       "38": "LED_R", "37": "LED_G", "36": "LED_B",
+       "35": "TOF_SCL", "34": "TOF_SDA", "33": "TOF_INT", "32": "TOF_XSHUT",
+       "31": "IMU_SCL", "30": "IMU_SDA", "29": "IMU_INT",
        "23": "USB_DM", "24": "USB_DP", "39": "U0TXD", "40": "U0RXD"}
 for g in [1, 2] + list(range(42, 44)) + list(range(46, 66)):
     esp[str(g)] = "GND"
@@ -102,10 +115,8 @@ C("C8", "100n", "+3V3", "GND", "mcu")
 R("R10", "10k", "+3V3", "EN", "mcu")
 C("C9", "1u", "EN", "GND", "mcu")
 R("R11", "10k", "+3V3", "BOOT", "mcu")
-P("SW1", "Switch:SW_Push", "RESET", "Button_Switch_SMD:SW_Push_1P1T_XKB_TS-1187A",
-  {"1": "EN", "2": "GND"}, "mcu", lcsc="C318884")
-P("SW2", "Switch:SW_Push", "BOOT", "Button_Switch_SMD:SW_Push_1P1T_XKB_TS-1187A",
-  {"1": "BOOT", "2": "GND"}, "mcu", lcsc="C318884")
+# rev 0.2: no RESET/BOOT buttons. Flashing uses native USB; for recovery, short the EN or
+# BOOT test pad to the GND pad next to it (TP8/TP9/TP4 on the back).
 
 # Status indicator: three discrete 0603 LEDs, anodes to 3V3, cathodes sunk by GPIOs (active-low).
 # A combined RGB package was dropped: no JLC common-anode part had a pinout we could verify.
@@ -122,42 +133,37 @@ R("R14", "33", "LED_BK", "LED_B", "mcu")
 # ---------------------------------------------------------------- ToF
 P("U2", "Sensor_Distance:VL53L1CXV0FY1", "VL53L1CX", "Sensor_Distance:ST_VL53L1x",
   {"11": "+3V3", "1": "+3V3", "2": "GND", "3": "GND", "4": "GND", "6": "GND", "12": "GND",
-   "9": "I2C_SDA", "10": "I2C_SCL", "5": "TOF_XSHUT", "7": "TOF_INT"}, "tof", lcsc="C190004")
+   "9": "TOF_SDA", "10": "TOF_SCL", "5": "TOF_XSHUT", "7": "TOF_INT"}, "tof", lcsc="C190004")
 C("C10", "100n", "+3V3", "GND", "tof", note="at AVDDVCSEL")
 C("C11", "4.7u", "+3V3", "GND", "tof", fp=C0603)
 C("C12", "100n", "+3V3", "GND", "tof", note="at AVDD")
-R("R15", "4.7k", "+3V3", "I2C_SDA", "tof")
-R("R16", "4.7k", "+3V3", "I2C_SCL", "tof")
+R("R15", "4.7k", "+3V3", "TOF_SDA", "tof")
+R("R16", "4.7k", "+3V3", "TOF_SCL", "tof")
 R("R17", "10k", "+3V3", "TOF_XSHUT", "tof")
 R("R18", "10k", "+3V3", "TOF_INT", "tof")
 
-# ---------------------------------------------------------------- Piezo front end
-P("J3", "Connector_Generic:Conn_01x02", "PIEZO", "Connector_Wire:SolderWire-0.1sqmm_1x02_P3.6mm_D0.4mm_OD1mm",
-  {"1": "PIEZO_P", "2": "GND"}, "piezo")
-R("R19", "1M", "PIEZO_P", "VBIAS", "piezo", note="with ~15 nF piezo: HP corner ~10 Hz")
-R("R20", "1k", "PIEZO_P", "OPA_IN", "piezo")
-P("D1", "Diode:BAT54S", "BAT54S", "Package_TO_SOT_SMD:SOT-23",
-  {"1": "GND", "2": "+3V3", "3": "OPA_IN"}, "piezo", lcsc="C47546")
-R("R21", "100k", "+3V3", "VBIAS", "piezo")
-R("R22", "100k", "VBIAS", "GND", "piezo")
-C("C13", "10u", "VBIAS", "GND", "piezo", fp=C0603)
-P("U5", "Amplifier_Operational:MCP6001-OT", "MCP6001", "Package_TO_SOT_SMD:SOT-23-5",
-  {"3": "OPA_IN", "4": "OPA_FB", "1": "OPA_OUT", "5": "+3V3", "2": "GND"}, "piezo", lcsc="C116490")
-C("C14", "100n", "+3V3", "GND", "piezo")
-R("R23", "100k", "OPA_OUT", "OPA_FB", "piezo", note="Rf: gain = 1 + Rf/Rg")
-R("R24", "47k", "OPA_OUT", "OPA_FB", "piezo", dnp=True, note="Rf alt, fit in parallel to drop gain")
-R("R25", "10k", "OPA_FB", "OPA_RG", "piezo")
-C("C15", "1u", "OPA_RG", "VBIAS", "piezo")
-R("R26", "1k", "OPA_OUT", "PIEZO_ADC", "piezo")
-C("C16", "10n", "PIEZO_ADC", "GND", "piezo")
+# ---------------------------------------------------------------- Accelerometer (on-board vibration pickup)
+# LSM6DS3TR-C on its own I2C bus (IMU_SDA/IMU_SCL) at 0x6A (SA0 low). CS high selects
+# I2C. Accelerometer ODR up to 6.66 kHz with a FIFO, enough for the slide-tube fundamentals.
+# Aux SPI pins SDx/SCx tied to GND (datasheet: VDDIO or GND); OCS_Aux, SDO_Aux, INT2 open.
+# INT1 -> IO34 (FIFO watermark / data-ready).
+P("U7", "Sensor_Motion:LSM6DS3", "LSM6DS3TR-C", "Package_LGA:LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y",
+  {"1": "GND", "2": "GND", "3": "GND", "4": "IMU_INT", "5": "+3V3", "6": "GND", "7": "GND",
+   "8": "+3V3", "12": "+3V3", "13": "IMU_SCL", "14": "IMU_SDA"}, "imu", lcsc="C967633",
+  note="Extended part; JLC requires X-ray inspection for this LGA")
+C("C17", "100n", "+3V3", "GND", "imu", note="at VDD (pin 8)")
+C("C18", "100n", "+3V3", "GND", "imu", note="at VDDIO (pin 5)")
+R("R19", "4.7k", "+3V3", "IMU_SDA", "imu")
+R("R20", "4.7k", "+3V3", "IMU_SCL", "imu")
 
 # ---------------------------------------------------------------- Test points
-for i, net in enumerate(["+3V3", "VSYS", "VBAT", "GND", "PIEZO_ADC", "U0TXD", "U0RXD"], 1):
+# rev 0.2: TP5 (PIEZO_ADC) went with the piezo front end; the others keep their numbers.
+for i, net in {1: "+3V3", 2: "VSYS", 3: "VBAT", 4: "GND", 6: "U0TXD", 7: "U0RXD", 8: "EN", 9: "BOOT"}.items():
     P(f"TP{i}", "Connector:TestPoint", net, "TestPoint:TestPoint_Pad_D1.0mm", {"1": net}, "test")
 
 # Nets that need a PWR_FLAG (driven only by passive pins)
 PWR_FLAGS = ["GND", "VBUS", "VSYS"]
 
-BLOCK_TITLES = {"power": "USB-C, charger, power path, 3.3 V", "mcu": "ESP32-S3-MINI-1, buttons, RGB LED",
-                "tof": "VL53L1X time-of-flight", "piezo": "Piezo contact-pickup front end",
+BLOCK_TITLES = {"power": "USB-C, charger, power path, 3.3 V", "mcu": "ESP32-S3-MINI-1, RGB LED",
+                "tof": "VL53L1X time-of-flight", "imu": "LSM6DS3TR-C accelerometer (vibration pickup)",
                 "test": "Test points"}

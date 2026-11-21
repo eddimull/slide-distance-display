@@ -11,7 +11,9 @@ Coordinate frame (mm):
   X = across the slide plane. Sensor is centred at x = 0, in line with brace/crossbar.
 
 The PCB stands upright, components facing +Z, antenna (PCB y=100 edge) down.
-PCB-to-world mapping (KiCad coords):  X = pcb_x - 115,  Y = -SENSOR_DROP + (pcb_y - 130.5)
+PCB-to-world mapping (KiCad coords, (sx, sy) = PCB_SENSOR, the ToF centre):
+  X = sx - pcb_x,  Y = -SENSOR_DROP + (pcb_y - sy)
+Board-specific geometry lives in BOARDS; P['BOARD'] (or a variant) picks one.
 """
 import math
 
@@ -22,21 +24,16 @@ P = dict(
     TUBE_D=22.0,        # upper (lead-pipe) tube OD
     BRACE_D=13.0,       # inner slide brace (handle) OD
     SADDLE_CLR=0.2,     # radial clearance on both saddles
-    SENSOR_DROP=32.0,   # tube centreline -> sensor centre (Y)
-    BOARD_W=30.0, BOARD_H=50.0, BOARD_T=1.6,
-    BAT_W=25.0, BAT_H=35.0, BAT_T=5.15,
+    BOARD='rev02',      # key into BOARDS
     BAT_FIT=0.3,        # clearance per side around battery
-    BAT_WIRE=0.4,       # extra pocket length at the lead (top) end -> 36.0 mm pocket
-    WIRE_CH_W=2.0,     # battery lead channel width (Y), past the top of the pocket
+    WIRE_CH_W=2.0,     # rev01 battery lead channel width (Y), past the top of the pocket
     WIRE_CH_L=8.0,      # how far the channel reaches in from the pocket's side edge
-    BAT_GAP=0.35,       # extra depth above battery
     BOARD_FIT=0.25,     # clearance per side around PCB
     FLOOR=2.0,          # behind-battery floor thickness
     WALL=1.6,
     LIP=1.5,            # wall height above PCB top surface
     # board retention: fixed lip on the top (tube) wall, flexing snaps on the bottom wall
     TOP_LIP=0.8,        # fixed lip overhang onto PCB at top edge
-    SNAP_X=11.5,        # |x| of the two bottom snap fingers (clear of ESP32 module +/-7.7)
     SNAP_W=6.0,         # finger width
     SNAP_HOOK=0.8,      # hook overhang onto PCB
     SNAP_FLAT=0.4,      # vertical catch face height before the 45 deg lead-in
@@ -83,6 +80,42 @@ P = dict(
                         # lips, snap hooks and slits are left sharp on purpose
 )
 
+# Board revisions. Positions are KiCad coordinates of the part (footprint origin or the
+# point named in the comment).
+BOARDS = {
+    # 30 x 50, single-sided; 25 x 35 LiPo centred behind the board, JST-PH on the front
+    'rev01': dict(
+        BOARD_W=30.0, BOARD_H=50.0, BOARD_T=1.6, PCB_ORIGIN=(100.0, 100.0),
+        PCB_SENSOR=(115.0, 130.5), SENSOR_DROP=32.0,
+        BAT_W=25.0, BAT_H=35.0, BAT_T=5.15, BAT_RECT=None,     # None = centred on board
+        BAT_WIRE=0.4,       # extra pocket length at the lead (top) end -> 36.0 mm pocket
+        BAT_GAP=0.35,       # extra depth above battery
+        CAVITY=None,        # under-board cavity (pcb x0, y0, x1, y1); None = battery only
+        USB=(104.2, 134.6), SW=(128.2, 145.3), J3=(115.0, 148.4),
+        JST=(125.0, 136.0), JST_SIDE='front',
+        SNAP_XS=(-11.5, 11.5),   # bottom snap fingers, clear of the module (+/-7.7)
+        BRACE_SCREW_HOLE_D=3.4, BRACE_NUT_AF=5.7, BRACE_NUT_T=2.6,   # M3
+    ),
+    # 32 x 26, double-sided. 502025 LiPo (25 x 20 x 5) behind the board but not behind the
+    # antenna band; JST-SH on the back beside the cell's lead end, mouth up (toward the
+    # antenna): the leads turn up from the cell and plug in from above.
+    'rev02': dict(
+        BOARD_W=32.0, BOARD_H=26.0, BOARD_T=1.0, PCB_ORIGIN=(100.0, 100.0),
+        PCB_SENSOR=(119.8, 107.6), SENSOR_DROP=30.9,
+        BAT_W=25.0, BAT_H=20.0, BAT_T=5.0, BAT_RECT=(107.0, 106.0, 132.0, 126.0),
+        BAT_WIRE=0.0,
+        BAT_GAP=1.7,        # back-side parts (SOT-23 <= 1.45 mm) sit between board and cell
+        CAVITY=(101.2, 106.0, 130.8, 124.8),   # back parts are kept 1.2 mm off the edges
+        USB=(127.8, 120.37), SW=(130.2, 110.35), J3=None,   # piezo removed in rev 0.2
+        JST=(103.73, 113.85), JST_SIDE='back',
+        JST_POCKET=(100.4, 106.0, 107.0, 117.6),   # PCB coords: J2 courtyard + plug/lead space above it
+        SNAP_XS=(0.5, -8.5),     # bottom snap fingers, clear of the module (world x > 3.6)
+        # the brace-clamp screws sit in the solid band under the antenna: M2, and use nylon
+        # screws there so no metal is behind the antenna
+        BRACE_SCREW_HOLE_D=2.4, BRACE_NUT_AF=4.2, BRACE_NUT_T=1.8,
+    ),
+}
+
 # Named variants: overrides applied on top of P. Set MODE (or ns['MODE'] when exec'd).
 VARIANTS = {
     'bands': {},
@@ -93,7 +126,7 @@ VARIANTS = {
     'velcro_v': {'ANCHOR': 'velcro', 'SADDLE_EXT': 18.0, 'SADDLE': 'v'},
     'clamp': {'ANCHOR': 'clamp', 'SADDLE': 'v'},
 }
-MODE = 'bands'
+MODE = 'clamp'
 
 
 def _convex_edges(body, keep_sharp):
@@ -176,7 +209,10 @@ def fillet_outside(design, root, name, r_mm, keep_sharp):
 
 
 def run(_context: str):
-    p = dict(P, **VARIANTS[MODE])
+    v = VARIANTS[MODE]
+    p = dict(P)
+    p.update(BOARDS[v.get('BOARD', P['BOARD'])])
+    p.update(v)
     app = adsk.core.Application.get()
     design = adsk.fusion.Design.cast(app.activeProduct)
     # reuse an empty, never-saved document; otherwise start a fresh one
@@ -254,9 +290,11 @@ def run(_context: str):
     def W(px, py):  # KiCad -> world XY (viewed from the component side, antenna down)
         # KiCad Y points down the screen, so a 180 deg in-plane rotation that puts the
         # antenna (pcb y=100) at the bottom flips X but keeps +pcb_y as +world Y.
-        return 115.0 - px, -p['SENSOR_DROP'] + (py - 130.5)
+        sx_, sy_ = p['PCB_SENSOR']
+        return sx_ - px, -p['SENSOR_DROP'] + (py - sy_)
 
-    (ax, ay), (bx, by) = W(100, 100), W(130, 150)
+    pox, poy = p['PCB_ORIGIN']
+    (ax, ay), (bx, by) = W(pox, poy), W(pox + p['BOARD_W'], poy + p['BOARD_H'])
     bx0, bx1 = min(ax, bx), max(ax, bx)
     by0, by1 = min(ay, by), max(ay, by)
     f = p['BOARD_FIT']
@@ -269,11 +307,24 @@ def run(_context: str):
     body = box(ox0, ox1, oy0, oy1, 0, z_top)
     sub(body, box(px0, px1, py0, py1, z_board, z_top + 1))
     bf = p['BAT_FIT']
-    # battery leads exit at the top (+Y, tube) end, so the extra length goes there
+
+    def wrect(r):   # KiCad rect (x0, y0, x1, y1) -> world (x0, x1, y0, y1), sorted
+        (xa, ya), (xb, yb) = W(r[0], r[1]), W(r[2], r[3])
+        return min(xa, xb), max(xa, xb), min(ya, yb), max(ya, yb)
+
+    if p['BAT_RECT']:
+        rx0, rx1, ry0, ry1 = wrect(p['BAT_RECT'])
+        bcx, bcy = (rx0 + rx1) / 2, (ry0 + ry1) / 2
+    # battery leads exit at the top (+Y, tube) end in rev01, so the extra length goes there
     bat_x0, bat_x1 = bcx - p['BAT_W'] / 2 - bf, bcx + p['BAT_W'] / 2 + bf
     bat_y0 = bcy - p['BAT_H'] / 2 - bf
     bat_y1 = bcy + p['BAT_H'] / 2 + bf + p['BAT_WIRE']
     sub(body, box(bat_x0, bat_x1, bat_y0, bat_y1, p['FLOOR'], z_board + 0.01))
+    solid_y1 = bat_y0               # top of the solid region at the antenna end
+    if p['CAVITY']:                 # room for the back-side parts, ledges left at the edges
+        cx0, cx1, cy0, cy1 = wrect(p['CAVITY'])
+        sub(body, box(cx0, cx1, cy0, cy1, p['FLOOR'], z_board + 0.01))
+        solid_y1 = min(solid_y1, cy0)
 
     # --- saddle shape ------------------------------------------------------
     hx = tube_r + p['SADDLE_CLR'] + p['TUBE_HORN_T']
@@ -347,11 +398,12 @@ def run(_context: str):
             # tray is solid between the snap-finger gap and the battery pocket, so the
             # nuts (side-entry slots in the side walls) and screw tips sit in the tray.
             bzc = -(brace_r + p['SADDLE_CLR'])                 # nominal brace centre z
-            ys = (py0 + p['SNAP_GAP'] + bat_y0) / 2            # screw height
+            ys = (py0 + p['SNAP_GAP'] + solid_y1) / 2          # screw height
             by0c = oy0
             by1c = max(ys + (ys - oy0), ys + p['BRACE_CAP_L'] / 2)
             sxb = rw + p['SCREW_INSET']
-            hr = p['SCREW_HOLE_D'] / 2
+            hr = p['BRACE_SCREW_HOLE_D'] / 2
+            naf, nt = p['BRACE_NUT_AF'], p['BRACE_NUT_T']
             b_ear_z0 = bzc + g2                                # back face of base ears
             cap_ear_z1 = bzc - g2                              # front face of cap ears
             cap_ear_z0 = cap_ear_z1 - p['CAP_EAR_T']
@@ -363,8 +415,7 @@ def run(_context: str):
                 add(body, box(xa, xb, by0c, by1c, b_ear_z0, 0.01))
                 add(bcap, box(xa, xb, by0c, by1c, cap_ear_z0, cap_ear_z1))
                 xa, xb = sorted((s * sxb, s * (ox1 + 1)))
-                sub(body, box(xa, xb, ys - p['NUT_AF'] / 2, ys + p['NUT_AF'] / 2,
-                              nz0, nz0 + p['NUT_T']))
+                sub(body, box(xa, xb, ys - naf / 2, ys + naf / 2, nz0, nz0 + nt))
                 sub(body, cyl((s * sxb, ys, b_ear_z0 - 1), (s * sxb, ys, z_board - 0.5), hr))
                 sub(bcap, cyl((s * sxb, ys, cap_ear_z0 - 1), (s * sxb, ys, cap_ear_z1 + 1), hr))
             bcap_apex = bzc - (brace_r + lin) / sa
@@ -403,31 +454,49 @@ def run(_context: str):
         else:
             sub(body, box(ox0 - 1, px0 + 0.01, y0, y1, z0, z1))
 
-    usb_x, usb_y = W(104.2, 134.6)       # J1 USB-C, mouth on the PCB x=100 edge
+    usb_x, usb_y = W(*p['USB'])           # J1 USB-C, mouth out a side edge
     side_cut(usb_x, usb_y - 5.5, usb_y + 5.5, z_board - 1.5, z_top + 1)
-    sw_x, sw_y = W(128.2, 145.3)         # SW3 slide switch, PCB x=130 edge
+    sw_x, sw_y = W(*p['SW'])             # SW3 slide switch, lever out a side edge
     swh = p['SW_NOTCH_H'] / 2
     side_cut(sw_x, sw_y - swh, sw_y + swh, z_board, z_top + 1)
     swz = z_board + p['BOARD_T'] + 1.2   # finger scoop centred near the actuator
     scoop_x = ox1 + 0.5 if sw_x > 0 else ox0 - 0.5
     sub(body, cyl((scoop_x, sw_y - swh, swz), (scoop_x, sw_y + swh, swz), p['SW_RELIEF_R']))
-    jst_x, jst_y = W(125, 136)           # J2 battery JST, PCB x=130 edge: plug opening
-    side_cut(jst_x, jst_y - 4.5, jst_y + 4.5, z_board - 1.5, z_top + 1)
-    # battery lead channel: leaves the top end of the battery pocket on the JST side,
-    # runs under the board to the side wall and exits there; leads loop to the plug.
-    ch_y0, ch_y1 = bat_y1 - 0.01, bat_y1 + p['WIRE_CH_W']
-    if jst_x > 0:
-        sub(body, box(bat_x1 - p['WIRE_CH_L'], px1 + 0.01, ch_y0, ch_y1, p['FLOOR'], z_board + 0.01))
+    jst_x, jst_y = W(*p['JST'])          # J2 battery connector: plug opening
+    if p['JST_SIDE'] == 'front':
+        side_cut(jst_x, jst_y - 4.5, jst_y + 4.5, z_board - 1.5, z_top + 1)
+        # battery lead channel: leaves the top end of the battery pocket on the JST side,
+        # runs under the board to the side wall and exits there; leads loop to the plug.
+        ch_y0, ch_y1 = bat_y1 - 0.01, bat_y1 + p['WIRE_CH_W']
+        if jst_x > 0:
+            sub(body, box(bat_x1 - p['WIRE_CH_L'], px1 + 0.01, ch_y0, ch_y1, p['FLOOR'], z_board + 0.01))
+        else:
+            sub(body, box(px0 - 0.01, bat_x0 + p['WIRE_CH_L'], ch_y0, ch_y1, p['FLOOR'], z_board + 0.01))
+        side_cut(jst_x, ch_y0, ch_y1, p['FLOOR'], z_board + 0.01)
+    elif 'JST_POCKET' in p:
+        # back-mounted connector, mouth up: pocket under the board over the connector and
+        # the plug + lead bend above it, open to the battery pocket; no side-wall exit
+        (ax, ay), (bx, by) = W(*p['JST_POCKET'][:2]), W(*p['JST_POCKET'][2:])
+        sub(body, box(min(ax, bx), max(ax, bx), min(ay, by), max(ay, by), p['FLOOR'], z_board + 0.01))
     else:
-        sub(body, box(px0 - 0.01, bat_x0 + p['WIRE_CH_L'], ch_y0, ch_y1, p['FLOOR'], z_board + 0.01))
-    side_cut(jst_x, ch_y0, ch_y1, p['FLOOR'], z_board + 0.01)
-    j3_x, j3_y = W(113.2, 148.4)         # J3 solder wires, top edge
-    sub(body, box(j3_x - 2.5, j3_x + 2.5, py1 - 0.01, oy1 + 1, z_board, z_top + 1))
+        # back-mounted connector beside the cell: pocket under the board from the
+        # connector out through the side wall, so the plug and its lead loop fit
+        xa, xb = sorted((jst_x, px1 + 0.01 if jst_x > 0 else px0 - 0.01))
+        sub(body, box(xa - 3.5, xb + 3.5, jst_y - 3.4, jst_y + 3.4, p['FLOOR'], z_board + 0.01))
+        side_cut(jst_x, jst_y - 3.4, jst_y + 3.4, p['FLOOR'], z_board + 0.01)
+    keep_out = []
+    if p.get('J3'):                      # rev01 only: J3 piezo solder pads (centre), top edge
+        j3_x, j3_y = W(*p['J3'])
+        sub(body, box(j3_x - 3.0, j3_x + 3.0, py1 - 0.01, oy1 + 1, z_board, z_top + 1))
+        keep_out.append((j3_x - 3.5, j3_x + 3.5))
 
     # --- board retention --------------------------------------------------
     z_hook = z_board + p['BOARD_T'] + 0.1      # underside of lips/hooks
-    # fixed top lip, two segments clear of the J3 notch and the tube-thinned centre
-    keep_out = sorted([(j3_x - 3.0, j3_x + 3.0), (sw_x - 3.0, sw_x + 3.0)])
+    # fixed top lip, in segments clear of the J3 notch (rev01) and parts at the top edge
+    for kx, ky, half in ((sw_x, sw_y, 3.0), (usb_x, usb_y, 5.5)):
+        if ky + 6.0 > py1:       # only parts that reach the top edge block the lip
+            keep_out.append((kx - half, kx + half))
+    keep_out.sort()
     edges = [px0 + 1.0] + [v for ko in keep_out for v in ko] + [px1 - 1.0]
     for lx0, lx1 in zip(edges[0::2], edges[1::2]):
         lx0, lx1 = max(lx0, px0 + 1.0), min(lx1, px1 - 1.0)
@@ -435,7 +504,7 @@ def run(_context: str):
             add(body, box(lx0, lx1, py1 - p['TOP_LIP'], py1 + 0.01, z_hook, z_top))
     # flexing snap fingers in the bottom wall
     n = 2 ** -0.5
-    for c in (-p['SNAP_X'], p['SNAP_X']):
+    for c in p['SNAP_XS']:
         hw = p['SNAP_W'] / 2
         s = p['SNAP_SLIT']
         for sx in (c - hw - s, c + hw):                       # side slits
@@ -491,7 +560,7 @@ def run(_context: str):
 
     def keep_sharp(x, y, z):      # mm; functional edges that must stay crisp
         in_pocket = px0 - 0.05 <= x <= px1 + 0.05 and py0 - 0.05 <= y <= py1 + 0.05             and z >= z_board - 0.05
-        in_snap = y <= py0 + p['SNAP_GAP'] + 0.1 and             any(abs(x - c) <= hw_s for c in (-p['SNAP_X'], p['SNAP_X']))
+        in_snap = y <= py0 + p['SNAP_GAP'] + 0.1 and             any(abs(x - c) <= hw_s for c in p['SNAP_XS'])
         return in_pocket or in_snap
 
     if p['FILLET_R'] > 0:

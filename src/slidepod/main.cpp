@@ -62,7 +62,30 @@
   static constexpr int PIN_LED_B     = 27;
   static constexpr int PIN_BOOT      = 0;
 #else
-  // Real SlidePod hardware (ESP32-S3-MINI-1).
+  // Real SlidePod hardware (ESP32-S3-MINI-1). Build with -DSLIDEPOD_REV=2 for rev 0.2 boards.
+  #ifndef SLIDEPOD_REV
+    #define SLIDEPOD_REV 1
+  #endif
+  #if SLIDEPOD_REV >= 2
+  // rev 0.2 (32 x 26 mm): everything on the module's right edge; LSM6DS3TR-C IMU added.
+  // NOTE: these pins were reassigned during PCB layout so the traces could be routed (the
+  // order along the module edge follows the parts on the board). They are NOT the earlier
+  // rev 0.2 draft map (SDA 37 / SCL 36 / XSHUT 42 / INT 41 / LEDs 40-38 / IMU_INT 35).
+  // The source of truth is the `esp` pin map in hardware/tools/circuit.py; keep them in sync.
+  // The ToF and the IMU are on separate I2C buses: ToF on Wire (PIN_SDA/PIN_SCL),
+  // IMU on Wire1 (PIN_IMU_SDA/PIN_IMU_SCL), each with its own 4.7k pull-ups on the board.
+  static constexpr int PIN_LED_R     = 42;
+  static constexpr int PIN_LED_G     = 41;
+  static constexpr int PIN_LED_B     = 40;
+  static constexpr int PIN_SCL       = 39;   // ToF (VL53L1X, 0x29) bus
+  static constexpr int PIN_SDA       = 38;
+  static constexpr int PIN_TOF_INT   = 37;
+  static constexpr int PIN_TOF_XSHUT = 36;
+  static constexpr int PIN_IMU_SCL   = 35;   // IMU (LSM6DS3TR-C, 0x6A) bus -> Wire1
+  static constexpr int PIN_IMU_SDA   = 48;
+  static constexpr int PIN_IMU_INT   = 34;   // LSM6DS3TR-C INT1
+  #else
+  // rev 0.1
   static constexpr int PIN_SDA       = 8;
   static constexpr int PIN_SCL       = 9;
   static constexpr int PIN_TOF_XSHUT = 5;
@@ -70,6 +93,7 @@
   static constexpr int PIN_LED_R     = 11;
   static constexpr int PIN_LED_G     = 12;
   static constexpr int PIN_LED_B     = 13;
+  #endif
   static constexpr int PIN_BOOT      = 0;
 #endif
 

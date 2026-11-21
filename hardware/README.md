@@ -1,7 +1,8 @@
 # SlidePod: wireless trombone slide sensor
 
 A single clip-on pod for the stationary inner slide. It measures slide extension with a
-VL53L1X time-of-flight sensor and pitch with a piezo contact pickup. It sends position,
+VL53L1X time-of-flight sensor and pitch with an LSM6DS3TR-C accelerometer that picks up
+the slide tube's vibration (rev 0.2; rev 0.1 used a piezo contact pickup). It sends position,
 pitch and partial over BLE to the Flutter app. There is no screen and no wire to the bell.
 
 ## Mechanical constraint that shapes the board
@@ -17,14 +18,15 @@ board stands as a thin "fin" perpendicular to the slide tubes:
      PCB →  │  │──►  ToF beam toward the reflector tab on the outer handle brace
    (fin)    │  │
             │▓▓│  ← battery behind the board
-     ═══════╧══╧═════════ inner slide tube (clamp + piezo at bottom)
+     ═══════╧══╧═════════ inner slide tube (clamp at bottom)
 ```
 
 - The ToF sits on the **front face** with nothing taller than it nearby. The ESP32 module,
   USB-C, switch and battery connector go on the back or sides.
 - The module antenna sits at the top edge, as far from the brass as possible, with copper
   keep-out on all layers under and around it per the Espressif guidelines.
-- The piezo disc is in the clamp and connects to two pads at the bottom edge.
+- The accelerometer is soldered to the board, which the clamp holds against the tube, so the
+  tube's vibration reaches it through the mount. No wired pickup.
 
 Current outline: **30 × 50 mm**, 4-layer, 1.0 mm thick, single-sided assembly. It can shrink later by moving parts to the back side, but JLC charges more for double-sided assembly.
 
@@ -37,14 +39,13 @@ USB-C ─ESD─┬─ D+/D- ─────────────────�
                     └──────── Schottky ─────┘   P-FET from VBAT, gated by VBUS
 JST-PH (1S LiPo with protection PCB) ─► VBAT
 
-3V3 ─► ESP32-S3-MINI-1, VL53L1X, MCP6001, status LEDs
+3V3 ─► ESP32-S3-MINI-1, VL53L1X, LSM6DS3TR-C, status LEDs
 ```
 
 ## Pin map (ESP32-S3-MINI-1)
 
 | Net | GPIO | Notes |
 |---|---|---|
-| PIEZO_ADC | 1 | ADC1_CH0, continuous/DMA mode at 8–16 kHz |
 | VBAT_SENSE | 2 | ADC1_CH1, 1M/1M divider from VBAT + 100 nF (about 2 µA drain) |
 | TOF_INT | 4 | VL53L1X GPIO1 (open-drain, 10k pull-up) |
 | TOF_XSHUT | 5 | 10k pull-up; drive low to power the sensor down |
@@ -56,6 +57,18 @@ JST-PH (1S LiPo with protection PCB) ─► VBAT
 | BOOT | 0 | Tactile switch to GND, 10k pull-up |
 | EN | EN | 10k pull-up + 1 µF to GND, RESET switch to GND |
 | U0TXD / U0RXD | 43 / 44 | Test pads only |
+
+Rev 0.2 moves the sensor and LED lines to the module's right edge and splits I2C into two
+buses (the shared bus could not be routed past the LEDs). The pins were reassigned during
+layout; `tools/circuit.py` (`esp`) is the source of truth and `src/slidepod/main.cpp` must match:
+
+| Net (rev 0.2) | GPIO | Module pin |
+|---|---|---|
+| LED_R / LED_G / LED_B | 42 / 41 / 40 | 38 / 37 / 36 |
+| TOF_SCL / TOF_SDA | 39 / 38 | 35 / 34 (ToF bus, Wire, 4.7k pull-ups R16/R15) |
+| TOF_INT / TOF_XSHUT | 37 / 36 | 33 / 32 |
+| IMU_SCL / IMU_SDA | 35 / 48 | 31 / 30 (IMU bus, Wire1, 4.7k pull-ups R20/R19) |
+| IMU_INT | 34 | 29 (LSM6DS3TR-C INT1) |
 
 Avoided: strapping pins 3, 45, 46, and ADC2, which conflicts with the radio.
 
@@ -88,22 +101,10 @@ draw nothing.
 - Enclosure: an open aperture in front of the sensor, or an IR-transparent cover window
   spaced per ST AN4907. Run crosstalk calibration in firmware if there's a cover.
 
-### Piezo front end (MCP6001)
-```
-3V3 ─100k─┬─100k─ GND          Vb = mid-rail, 10 µF to GND
-          Vb
-          │
-         1M 
-          │
-PIEZO+ ──┼──1k──► (+) MCP6001 ──┬── out ──1k──┬──► PIEZO_ADC (GPIO1)
-PIEZO- ──GND  BAT54S to 3V3/GND  │              10 nF
-                          (−) ─┬─ Rf 100k (DNP-able 47k option)
-                               Rg 10k ── 1 µF ── Vb
-```
-- Gain is about 11, and there are footprints for a second Rf value because gain is the main unknown.
-- The high-pass corner (10 MΩ with the piezo's C) is well under 40 Hz. Real band-limiting
-  (about 35 Hz to 2 kHz) happens in firmware.
-- The 1k/10 nF RC is the anti-alias filter (fc ≈ 16 kHz) and isolates the ADC sampling cap.
+### Pitch pickup (rev 0.2)
+The piezo front end (MCP6001 amplifier, bias divider, clamp diode, anti-alias RC and the J3
+solder pads) was removed. The LSM6DS3TR-C on its own I2C bus (0x6A, INT1 on IO34) replaces it:
+FIFO-buffered acceleration at up to 6.66 kHz covers the slide-tube fundamentals.
 
 ### Indicator and controls
 - Three separate 0603 LEDs (red, green, blue), side by side for a light pipe. Series resistors: 1k red (about 1.3 mA), 33 Ω green and blue (about 3–9 mA, depending on Vf at 3.3 V). Balance brightness with PWM in firmware.
@@ -111,7 +112,7 @@ PIEZO- ──GND  BAT54S to 3V3/GND  │              10 nF
 - BOOT and RESET tactile switches on the board edge, which the enclosure can expose as pinholes.
 
 ### Test points
-3V3, VSYS, VBAT, GND, PIEZO_ADC, U0TXD, U0RXD.
+3V3, VSYS, VBAT, GND, U0TXD, U0RXD (rev 0.2 adds EN and BOOT; TP5 went with the piezo).
 
 ## Key parts (JLCPCB / LCSC)
 
@@ -123,11 +124,9 @@ Check live stock and the Basic/Extended label on jlcpcb.com/partdetail/<C#> befo
 | U2 | VL53L1CXV0FY/1 | C190004 | Not yet confirmed on JLC |
 | U3 | MCP73831T-2ACI/OT | C424093 | Not yet confirmed |
 | U4 | ME6211C33M5G-N | C82942 | Extended. Alternate: AP2112K-3.3 C51118 |
-| U5 | MCP6001T-I/OT | C116490 | Not yet confirmed |
 | U6 | USBLC6-2SC6 (ST) | C7519 | Extended |
 | J1 | TYPE-C-31-M-12 | C165948 | Extended |
 | J2 | JST S2B-PH-SM4-TB | C295747 | Extended |
-| D1 | BAT54S (Nexperia) | C47546 | Extended (no Basic BAT54S exists) |
 | SW1/2 | TS-1187A-B-A-B | C318884 | Not yet confirmed |
 | SW3 | MSK12C02 | C431540 | Not yet confirmed |
 | Q1 | AO3401A | C15127 | Basic |
@@ -138,7 +137,7 @@ Check live stock and the Basic/Extended label on jlcpcb.com/partdetail/<C#> befo
 
 ## Firmware-facing summary
 - I2C @ 400 kHz on GPIO8/9. VL53L1X in Short mode, 20 ms budget, 8×8 ROI.
-- Piezo on ADC1_CH0, continuous mode.
+- Rev 0.2 (build with `-DSLIDEPOD_REV=2`): ToF on Wire (SDA IO38 / SCL IO39); LSM6DS3TR-C (0x6A) on a second bus, Wire1 (SDA IO48 / SCL IO35), INT1 on IO34 for FIFO watermark.
 - BLE GATT notify at 50 Hz with about 10 bytes per update. Calibration (offset, length) goes in a writable characteristic.
 
 ## Design files and workflow
@@ -151,7 +150,7 @@ The schematic and board are **generated** from Python, so changes are reviewable
 | `tools/gen_sch.py` | Builds `slidepod.kicad_sch` (a net label on every pin, using KiCad library symbols) |
 | `tools/gen_pcb.py` | Builds `slidepod.kicad_pcb`: outline, 4-layer stackup, net classes, placement, GND pours |
 | `tools/check_net.py` | Checks the exported netlist against `circuit.py`, pin by pin |
-| `tools/kicad.sh` | Runs any command in the `kicad/kicad:9.0` Docker image (no local install needed) |
+| `tools/kicad.sh` | Runs any command in KiCad 10 under Docker (`kicad/kicad:10.0` plus numpy, built from `tools/Dockerfile` on first use) |
 
 ```sh
 make            # ERC, netlist check against circuit.py, DRC with schematic parity
@@ -174,7 +173,7 @@ connects to. Parts excluded from placement:
       **DRC: 0 errors, 0 unconnected, schematic parity clean.**
 - [x] Fab outputs in `fab/`: `slidepod-gerbers.zip` (Gerbers + drill), `slidepod-bom.csv`, `slidepod-cpl.csv`
 - [x] LCSC numbers on every BOM line
-- [ ] Recheck the MCP6001, VL53L1X, MCP73831 and switches on JLC
+- [ ] Recheck the LSM6DS3TR-C, VL53L1X, MCP73831 and switches on JLC
 - [ ] In JLC's assembly preview, check every part's rotation (CPL rotations follow KiCad's zero orientation)
 
 ### Stackup and routing pipeline (`make route`)
@@ -197,7 +196,7 @@ with `finish_route.py`. Rev 0.1 used it once: R6 went next to R7 and C5, so the 
 battery-sense divider sits at the ADC pin. `gen_pcb.py` now places it there itself.
 
 ### Review before ordering
-- The piezo amplifier gain (R23, with R24 left unfitted) is a guess. Test it on a real horn.
+- Whether the accelerometer picks up enough of the tube's vibration through the mount is untested. Try it on a real horn.
 - The JST-PH battery polarity isn't standard across vendors. Check the battery leads against the `+` marking.
 - The VL53L1X needs an open aperture or a proper cover window in the enclosure (ST AN4907).
 - Check BLE range with the pod clamped on the horn. Brass near the antenna detunes it.
