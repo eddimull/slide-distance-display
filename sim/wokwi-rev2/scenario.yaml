@@ -1,0 +1,50 @@
+# Wokwi CI scenario: drives the emulated VL53L1X through the slide range and checks the
+# firmware's serial output (CSV: raw_mm,position,pitch_hz,piezo_rms).
+#   make -C sim/wokwi-rev2 test-sim      (needs wokwi-cli and WOKWI_CLI_TOKEN)
+name: SlidePod rev 0.2 ToF bring-up
+version: 1
+author: SlidePod
+
+steps:
+  - wait-serial: '# SlidePod ready'
+  - set-control:
+      part-id: tof
+      control: noise
+      value: 0
+
+  # 1st position: 120 mm -> (120 - 50) / 500 = 0.140
+  - set-control:
+      part-id: tof
+      control: distance
+      value: 120
+  - wait-serial: '120,0.140'
+
+  # mid slide
+  - set-control:
+      part-id: tof
+      control: distance
+      value: 300
+  - wait-serial: '300,0.500'
+
+  # past 500 mm the firmware switches the sensor to Medium mode / 6x6 ROI
+  - set-control:
+      part-id: tof
+      control: distance
+      value: 620
+  - wait-serial: '# tof far: Medium 6x6'
+  - wait-serial: '620,1.000'
+
+  # lose the target: invalid readings, then back to near mode after 8 misses
+  - set-control:
+      part-id: tof
+      control: distance
+      value: 1390
+  - wait-serial: '# no reading'
+  - wait-serial: '# tof near: Short 4x8'
+
+  # target back, slide in
+  - set-control:
+      part-id: tof
+      control: distance
+      value: 200
+  - wait-serial: '200,0.300'

@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "author": "SlidePod",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-s3-devkitc-1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+
+    { "type": "chip-vl53l1x", "id": "tof", "top": -120, "left": 300,
+      "attrs": { "distance": "120", "noise": "1.5", "maxRange": "1300" } },
+    { "type": "wokwi-resistor", "id": "r15", "top": -190, "left": 230, "rotate": 90, "attrs": { "value": "4700" } },
+    { "type": "wokwi-resistor", "id": "r16", "top": -190, "left": 260, "rotate": 90, "attrs": { "value": "4700" } },
+    { "type": "wokwi-resistor", "id": "r17", "top": -190, "left": 420, "rotate": 90, "attrs": { "value": "10000" } },
+    { "type": "wokwi-resistor", "id": "r18", "top": -190, "left": 450, "rotate": 90, "attrs": { "value": "10000" } },
+
+    { "type": "wokwi-led", "id": "led1", "top": 150, "left": 330, "attrs": { "color": "red", "label": "LED1" } },
+    { "type": "wokwi-led", "id": "led2", "top": 150, "left": 380, "attrs": { "color": "green", "label": "LED2" } },
+    { "type": "wokwi-led", "id": "led3", "top": 150, "left": 430, "attrs": { "color": "blue", "label": "LED3" } },
+    { "type": "wokwi-resistor", "id": "r12", "top": 230, "left": 320, "rotate": 90, "attrs": { "value": "1000" } },
+    { "type": "wokwi-resistor", "id": "r13", "top": 230, "left": 370, "rotate": 90, "attrs": { "value": "33" } },
+    { "type": "wokwi-resistor", "id": "r14", "top": 230, "left": 420, "rotate": 90, "attrs": { "value": "33" } },
+
+    { "type": "wokwi-pushbutton", "id": "boot", "top": 330, "left": 320, "attrs": { "label": "BOOT pad (TP9)", "color": "black" } },
+    { "type": "wokwi-resistor", "id": "r11", "top": 300, "left": 260, "rotate": 90, "attrs": { "value": "10000" } }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+
+    [ "tof:VIN", "esp:3V3.1", "red", [] ],
+    [ "tof:GND", "esp:GND.1", "black", [] ],
+    [ "tof:SDA", "esp:38", "blue", [] ],
+    [ "tof:SCL", "esp:39", "gold", [] ],
+    [ "tof:XSHUT", "esp:36", "violet", [] ],
+    [ "tof:GPIO1", "esp:37", "orange", [] ],
+    [ "r15:1", "esp:3V3.1", "red", [] ],
+    [ "r15:2", "esp:38", "blue", [] ],
+    [ "r16:1", "esp:3V3.1", "red", [] ],
+    [ "r16:2", "esp:39", "gold", [] ],
+    [ "r17:1", "esp:3V3.1", "red", [] ],
+    [ "r17:2", "esp:36", "violet", [] ],
+    [ "r18:1", "esp:3V3.1", "red", [] ],
+    [ "r18:2", "esp:37", "orange", [] ],
+
+    [ "led1:A", "esp:3V3.1", "red", [] ],
+    [ "led1:C", "r12:1", "red", [] ],
+    [ "r12:2", "esp:42", "red", [] ],
+    [ "led2:A", "esp:3V3.1", "red", [] ],
+    [ "led2:C", "r13:1", "green", [] ],
+    [ "r13:2", "esp:41", "green", [] ],
+    [ "led3:A", "esp:3V3.1", "red", [] ],
+    [ "led3:C", "r14:1", "blue", [] ],
+    [ "r14:2", "esp:40", "blue", [] ],
+
+    [ "boot:1.l", "esp:0", "gray", [] ],
+    [ "boot:2.l", "esp:GND.1", "black", [] ],
+    [ "r11:1", "esp:3V3.1", "red", [] ],
+    [ "r11:2", "esp:0", "gray", [] ]
+  ],
+  "dependencies": {}
+}

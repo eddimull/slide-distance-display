@@ -13,6 +13,8 @@
  *
  * Build targets:
  *   pio run -e slidepod-sim   Wokwi simulation (mock ToF, no BLE)
+ *   pio run -e slidepod-wokwi Wokwi rev 0.2 board sim: real ToF driver against an
+ *                             emulated VL53L1X (sim/wokwi-rev2), no BLE
  *   pio run -e slidepod       Real hardware (VL53L1X + NimBLE)
  */
 
@@ -262,7 +264,9 @@ static void piezo_init() {}  // disabled or Wokwi: pitch stays 0
 static volatile bool g_ledFromApp = false;
 static volatile uint8_t g_ledR = 0, g_ledG = 0, g_ledB = 0;
 
-#ifndef WOKWI_SIM
+// SLIDEPOD_NO_BLE: real-hardware build without BLE, for the Wokwi rev 0.2 sim
+// (env slidepod-wokwi). Wokwi doesn't simulate the ESP32-S3's Bluetooth.
+#if !defined(WOKWI_SIM) && !defined(SLIDEPOD_NO_BLE)
 #include <NimBLEDevice.h>
 
 #define SLIDEPOD_SVC_UUID  "d5e40001-7537-4463-a441-27f2d3140fab"
