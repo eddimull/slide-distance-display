@@ -9,8 +9,12 @@ import 'gliss_take.dart';
 import 'one_euro.dart';
 import 'pitch_detector.dart';
 import 'position_colors.dart';
+import 'record_screen.dart';
 import 'slide_calibration.dart';
 import 'slidepod_ble.dart';
+import 'take.dart';
+import 'take_store.dart';
+import 'takes_screen.dart';
 import 'trombone_chart.dart';
 import 'upper_partials.dart';
 
@@ -117,6 +121,8 @@ class _HomePageState extends State<HomePage> {
   bool _calDirty = false;
   Timer? _calSaveTimer;
   String get _calKey => _source.isMock ? 'slide_cal_mock' : 'slide_cal';
+  // Recorded takes; opened the first time the Takes screen is.
+  Future<TakeStore>? _store;
 
   @override
   void initState() {
@@ -274,11 +280,12 @@ class _HomePageState extends State<HomePage> {
     _prevPosition = d.position;
     _prevTime = now;
 
-    if (_calibrating) {
-      _frames.add((t: now, mm: filt, freq: freq));
-    } else if (_upper.feed(now, filt ?? 0, filt == null ? null : freq,
-            still: _velocity * 6.0 < 0.5) !=
-        null) {
+    // Calibration and recording listen to these.
+    _frames.add((t: now, mm: filt, freq: freq));
+    if (!_calibrating &&
+        _upper.feed(now, filt ?? 0, filt == null ? null : freq,
+                still: _velocity * 6.0 < 0.5) !=
+            null) {
       // (No ToF: ends any note being listened to; can't learn from it.)
       _calDirty = true;
     }
@@ -386,6 +393,39 @@ class _HomePageState extends State<HomePage> {
       _calDirty = true;
       _saveCal();
     }
+  }
+
+  /// The list of recorded takes, where new ones are recorded from.
+  Future<void> _openTakes() async {
+    final store = await (_store ??= TakeStore.open());
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => TakesScreen(
+        store: store,
+        cal: _cal,
+        canRecord: _connected,
+        onRecord: ({title}) => _recordTake(store, title: title),
+      ),
+    ));
+  }
+
+  /// Records one take (turning the mic on for pitch and audio), titled
+  /// [title] when it's another take of a piece.
+  Future<Take?> _recordTake(TakeStore store, {String? title}) async {
+    if (!_micActive && !_source.isMock) await _toggleMic();
+    if (!mounted) return null;
+    return Navigator.of(context).push<Take>(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => RecordScreen(
+        frames: _frames.stream,
+        pcm: _pitchDetector.pcmStream,
+        sampleRate: _pitchDetector.sampleRate,
+        cal: _cal,
+        store: store,
+        hearing: _micActive || _source.isMock || _data.hasPiezo,
+        title: title,
+      ),
+    ));
   }
 
   Future<void> _startMock() async {
@@ -605,6 +645,11 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const Spacer(),
+                  IconButton(
+                    tooltip: 'Takes: record and review',
+                    onPressed: _openTakes,
+                    icon: const Icon(Icons.library_music_outlined),
+                  ),
                   SegmentedButton<bool>(
                     segments: const [
                       ButtonSegment(value: true, label: Text('Easy')),
