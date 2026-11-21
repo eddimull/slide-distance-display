@@ -371,13 +371,6 @@ class _FlashCardScreenState extends State<FlashCardScreen>
             ],
           ),
         ),
-        if (!widget.cal.calibrated) ...[
-          const SizedBox(height: 12),
-          const Text(
-              'Your slide isn\'t calibrated yet, so positions may read off. '
-              'Calibrate from the home screen for a fair score.',
-              style: TextStyle(fontSize: 13, color: TakeStyle.warn)),
-        ],
         const SizedBox(height: 20),
         Row(
           children: [
