@@ -5,9 +5,10 @@
 
 Parts with the same LCSC part number are merged onto one BOM line (avoids
 "multiple lines matched to the same part" warning in JLCPCB's BOM upload).
-Parts that are DNP or excluded from the BOM (test points, piezo pads) are left out.
+Parts that are DNP or excluded from the BOM (test points) are left out.
 
-Rotation and position offsets calibrated from the first physical order (2026-11-07).
+Rotation and position offsets calibrated from the first physical order (2026-11-07), top side only.
+rev 0.2 adds bottom-side parts: their rotations are unverified, check every one in the JLC preview.
 JLCPCB rotations are CCW-positive; offsets are added to the kicad-cli CPL value.
 Position offsets are in mm in CPL coordinates (kicad-cli negates Y vs. KiCad board).
 Re-verify both tables in the placement preview on each new order.

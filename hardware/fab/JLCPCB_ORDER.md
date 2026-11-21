@@ -64,11 +64,9 @@ JLCPCB will show a parts table. Check each row:
 | C190004 | VL53L1CXV0FY/1 | Confirm available |
 | C424093 | MCP73831T-2ACI/OT | Confirm available |
 | C82942 | ME6211C33M5G-N | Extended |
-| C116490 | MCP6001T-I/OT | Confirm available |
 | C7519 | USBLC6-2SC6 | Extended |
 | C165948 | TYPE-C-31-M-12 (USB-C) | Extended |
 | C295747 | JST S2B-PH-SM4-TB | Extended |
-| C47546 | BAT54S | Extended |
 | C318884 | TS-1187A-B-A-B (SW1,SW2) | Confirm available |
 | C431540 | MSK12C02 (SW3) | Confirm available |
 | C15127 | AO3401A | Basic |
@@ -93,12 +91,10 @@ has updated their part models.
 
 | Ref | Package | LCSC | CPL rot | JLCPCB rot | Offset |
 |---|---|---|---|---|---|
-| D1 | SOT-23 (BAT54S) | C47546 | 90 | 180 | +90 |
 | Q1 | SOT-23 (AO3401A) | C15127 | 90 | 180 | +90 |
 | U3 | SOT-23-5 (MCP73831) | C424093 | 0 | 270 | +270 (90° CW) |
 | U4 | SOT-23-5 (ME6211) | C82942 | 0 | 270 | +270 (90° CW) |
 | U6 | SOT-23-6 (USBLC6) | C7519 | 0 | 270 | +270 (90° CW) |
-| U5 | SOT-23-5 (MCP6001) | C116490 | 0 | 180 | +180 |
 | U2 | LGA-12 (VL53L1CX) | C190004 | 0 | 180 | +180 |
 
 No rotation change needed for: D2, D3, LED1–3, J2, SW1, SW2, SW3.
@@ -127,8 +123,7 @@ Review the price, then proceed through shipping and payment.
 
 ## Notes
 
-- **R24 is DNP** (do not place) — not in the BOM or CPL. Correct.
-- **J3 (piezo pads) and test points** are not in the BOM — hand-soldered or probe points. Correct.
+- **Test points** are not in the BOM — probe points. Correct.
 - **U1 footprint warning:** U1 (ESP32-S3-MINI-1-N8) is placed on the KiCad
   `RF_Module:ESP32-S2-MINI-1` footprint. The S2-MINI-1 and S3-MINI-1 share the
   same outline and pad layout, but have different pin functions. Verify that

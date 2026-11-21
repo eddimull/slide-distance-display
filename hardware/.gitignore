@@ -11,3 +11,7 @@ freerouting.json
 .tools/
 __pycache__/
 *.kicad_prl
+
+# hand-routing scratch and routing logs
+.scratch/
+*.log
