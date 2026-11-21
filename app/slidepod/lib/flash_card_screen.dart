@@ -21,9 +21,14 @@ class FlashGameSpec {
   /// The first how-to-play step: (bold, rest).
   final (String, String) firstStep;
 
+  /// The third step's second half (after "The faster you arrive, the
+  /// more it scores.").
+  final String thirdStep;
+
   /// Cards are notes on a staff (else position numbers).
   final bool notes;
   final FlashDeck Function() deck;
+  final FlashCardRules rules;
 
   const FlashGameSpec({
     required this.id,
@@ -32,9 +37,13 @@ class FlashGameSpec {
     required this.levelName,
     required this.headline,
     required this.firstStep,
+    this.thirdStep = 'No need to play a note.',
     required this.notes,
     required this.deck,
+    this.rules = const FlashCardRules(),
   });
+
+  bool get needsPitch => rules.needsPitch;
 
   String get levelLabel => 'LEVEL $level · ${levelName.toUpperCase()}';
 }
@@ -65,18 +74,38 @@ const noteFlash = FlashGameSpec(
   deck: _notes,
 );
 
-/// A flash-card game ([positionFlash], [noteFlash]): a card comes up, put
+const playTheNote = FlashGameSpec(
+  id: 'play_the_note',
+  title: 'Play the Note',
+  level: 3,
+  levelName: 'Playing',
+  headline: 'Play it, slide and all',
+  firstStep: ('A note comes up, F2 to F4.',
+      'Play it, with the slide in a position for it.'),
+  thirdStep: 'Within ±10¢ earns a bonus on top.',
+  notes: true,
+  deck: _notes,
+  // Allows time to start the note; the note must hold within ±25¢.
+  rules: FlashCardRules(parBaseMs: 1000, pitchGateCents: 25),
+);
+
+/// A flash-card game ([positionFlash], [noteFlash], [playTheNote]): a card comes up, put
 /// the slide where it says, as fast as you can, and keep a combo going.
 /// Rounds last 30 seconds; the score goes on the game's high-score table.
 class FlashCardScreen extends StatefulWidget {
   static const gameId = 'position_flash';
   static const title = 'Position Flash';
 
-  /// ToF readings (the pitch is ignored: no playing needed).
+  /// ToF readings with the pitch heard (used by the playing levels).
   final Stream<CalFrame> frames;
   final SlideCalibration cal;
   final HighScores scores;
-  final FlashCardRules rules;
+
+  /// Overrides the game's own rules (tests).
+  final FlashCardRules? rules;
+
+  /// Turns the mic on (playing levels), before a round starts.
+  final Future<void> Function()? ensureMic;
   final FlashGameSpec spec;
 
   /// For tests: the round's random cards, and the clock (ms).
@@ -88,7 +117,8 @@ class FlashCardScreen extends StatefulWidget {
     required this.frames,
     required this.cal,
     required this.scores,
-    this.rules = const FlashCardRules(),
+    this.rules,
+    this.ensureMic,
     this.spec = positionFlash,
     this.rng,
     this.clock,
@@ -147,8 +177,9 @@ class MultBadge extends StatelessWidget {
 
 class _FlashCardScreenState extends State<FlashCardScreen>
     with SingleTickerProviderStateMixin {
-  late final FlashCardRound _round = FlashCardRound(
-      rules: widget.rules, deck: widget.spec.deck(), rng: widget.rng);
+  late final FlashCardRound _round =
+      FlashCardRound(rules: _r, deck: widget.spec.deck(), rng: widget.rng);
+  double? _freq;
   late final Ticker _ticker;
   final _clock = Stopwatch()..start();
   StreamSubscription<CalFrame>? _sub;
@@ -159,7 +190,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
   bool _submitted = false;
 
   int get _now => widget.clock?.call() ?? _clock.elapsedMilliseconds;
-  FlashCardRules get _r => widget.rules;
+  FlashCardRules get _r => widget.rules ?? widget.spec.rules;
 
   @override
   void initState() {
@@ -167,6 +198,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
     _ticker = createTicker((_) => _tick());
     _sub = widget.frames.listen((f) {
       _semis = f.mm == null ? null : widget.cal.semitonesFromMm(f.mm!);
+      _freq = f.freq;
       _seen = _seen || f.mm != null;
       _tick();
     });
@@ -174,7 +206,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
 
   void _tick() {
     final was = _round.phase;
-    _round.update(_now, _semis);
+    _round.update(_now, _semis, freq: _freq);
     if (_round.phase == FlashPhase.done && was != FlashPhase.done) {
       _ticker.stop();
       _submit();
@@ -182,7 +214,9 @@ class _FlashCardScreenState extends State<FlashCardScreen>
     if (mounted) setState(() {});
   }
 
-  void _start() {
+  Future<void> _start() async {
+    if (widget.spec.needsPitch) await widget.ensureMic?.call();
+    if (!mounted) return;
     _rank = null;
     _submitted = false;
     _bestBefore = widget.scores.best(widget.spec.id)?.score;
@@ -329,8 +363,12 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                 style: const TextStyle(fontSize: 11, color: TakeStyle.muted)),
           ]),
         );
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+    // The explanation scrolls; the high score and Start stay in reach.
+    return Column(
+      children: [
+        Expanded(
+          child: ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -399,7 +437,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                       color: const Color(0xFF8FD694))),
             ),
             'The faster you arrive, the more it scores.',
-            'No need to play a note.'),
+            widget.spec.thirdStep),
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -419,6 +457,15 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                     const Color(0xFFEF9A9A)),
               ]),
               const SizedBox(height: 10),
+              if (widget.spec.needsPitch) ...[
+                Text(
+                    'The note has to hold within ±${_r.pitchGateCents!.round()}¢ '
+                    'to count. Within ±${_r.inTuneCents.round()}¢: '
+                    '+${_r.inTuneBonus} on top, before the multiplier.',
+                    style: const TextStyle(
+                        fontSize: 12, height: 1.45, color: TakeStyle.muted)),
+                const SizedBox(height: 6),
+              ],
               Text(
                   'Par is longer for bigger moves, so a 1st → 7th card is as '
                   'fair as 3rd → 4th. ${_r.roundMs ~/ 1000} seconds a round: '
@@ -450,7 +497,17 @@ class _FlashCardScreenState extends State<FlashCardScreen>
             ],
           ),
         ),
-        const SizedBox(height: 20),
+      ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: TakeStyle.chip))),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
         Row(
           children: [
             const Text('High score',
@@ -473,6 +530,9 @@ class _FlashCardScreenState extends State<FlashCardScreen>
           ),
           onPressed: _seen ? _start : null,
           child: Text(_seen ? 'Start' : 'Waiting for the slide pod…'),
+        ),
+            ],
+          ),
         ),
       ],
     );
@@ -505,7 +565,9 @@ class _FlashCardScreenState extends State<FlashCardScreen>
     String detail = '';
     if (last != null) {
       final parts = [
-        if (last.hit && last.multiplier > 1) '${last.base} × ${last.multiplier}',
+        if (last.cents != null) centsLabel(last.cents!),
+        if (last.inTune) 'in tune +${last.bonus}',
+        if (last.hit && last.multiplier > 1) '× ${last.multiplier}',
         if (last.brokeCombo) 'combo lost',
       ];
       detail = parts.join(' · ');
@@ -581,6 +643,8 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                       SizedBox(
                         height: 16,
                         child: Text(detail,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                                 fontSize: 12, color: TakeStyle.muted)),
                       ),
@@ -591,7 +655,15 @@ class _FlashCardScreenState extends State<FlashCardScreen>
             ),
           ),
         ),
-        if (widget.spec.notes)
+        if (widget.spec.needsPitch)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(40, 0, 40, 16),
+            child: PitchMeter(
+                cents: feedback ? last!.cents : _round.heardCents,
+                gate: _r.pitchGateCents!,
+                inTune: _r.inTuneCents),
+          )
+        else if (widget.spec.notes)
           const Padding(
             padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
             child: Text('Any position that plays it counts.',
@@ -764,10 +836,17 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                     label: 'Found')),
             const SizedBox(width: 8),
             Expanded(
-                child: StatTile(
-                    value: avg == null ? '–' : (avg / 1000).toStringAsFixed(2),
-                    unit: avg == null ? null : 's',
-                    label: 'Average')),
+                child: widget.spec.needsPitch
+                    ? StatTile(
+                        value:
+                            '${_round.results.where((c) => c.inTune).length}',
+                        unit: '/${_round.hits}',
+                        label: 'In tune (±${_r.inTuneCents.round()}¢)',
+                        color: TakeStyle.good)
+                    : StatTile(
+                        value: avg == null ? '–' : (avg / 1000).toStringAsFixed(2),
+                        unit: avg == null ? null : 's',
+                        label: 'Average')),
             const SizedBox(width: 8),
             Expanded(
                 child: StatTile(
@@ -786,7 +865,11 @@ class _FlashCardScreenState extends State<FlashCardScreen>
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 6,
           crossAxisSpacing: 6,
-          childAspectRatio: widget.spec.notes ? 0.85 : 1.05,
+          childAspectRatio: widget.spec.needsPitch
+              ? 0.72
+              : widget.spec.notes
+                  ? 0.85
+                  : 1.05,
           children: [
             for (final c in _round.results)
               Container(
@@ -813,6 +896,10 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                         style: TakeStyle.mono.copyWith(
                             fontSize: 10,
                             color: c.hit ? TakeStyle.body : const Color(0xFFEF9A9A))),
+                    if (c.cents != null)
+                      Text(centsLabel(c.cents!),
+                          style: TakeStyle.mono.copyWith(
+                              fontSize: 10, color: TakeStyle.centsColor(c.cents!))),
                     if (c.hit)
                       Text('×${c.multiplier}',
                           style: TakeStyle.mono.copyWith(
@@ -942,4 +1029,84 @@ class _ComboPips extends StatelessWidget {
           ],
         ),
       );
+}
+
+/// How far the note heard is from the card's: a bar from −50 to +50¢ with
+/// the counting zone (±[gate]) and the in-tune zone (±[inTune]) marked.
+class PitchMeter extends StatelessWidget {
+  final double? cents;
+  final double gate, inTune;
+  const PitchMeter(
+      {super.key, required this.cents, required this.gate, required this.inTune});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = cents;
+    final heard = c == null
+        ? 'Listening…'
+        : c.abs() > gate
+            ? 'not this note yet'
+            : centsLabel(c);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text("YOU'RE PLAYING",
+                  style: TakeStyle.sectionLabel,
+                  overflow: TextOverflow.ellipsis),
+            ),
+            Text(heard,
+                style: TakeStyle.mono.copyWith(
+                    fontSize: 14,
+                    color: c == null || c.abs() > gate
+                        ? TakeStyle.muted
+                        : TakeStyle.centsColor(c))),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Semantics(
+          label: c == null ? 'No note heard' : '${c.round()} cents',
+          child: CustomPaint(
+            size: const Size(double.infinity, 22),
+            painter: _MeterPainter(c, gate, inTune),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MeterPainter extends CustomPainter {
+  final double? cents;
+  final double gate, inTune;
+  _MeterPainter(this.cents, this.gate, this.inTune);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const range = 50.0;
+    final w = size.width, mid = size.height / 2;
+    double x(double c) => w / 2 + c.clamp(-range, range) / range * w / 2;
+    RRect bar(double from, double to) => RRect.fromLTRBR(
+        x(from), mid - 4, x(to), mid + 4, const Radius.circular(4));
+    canvas.drawRRect(bar(-range, range), Paint()..color = TakeStyle.chip);
+    canvas.drawRRect(
+        bar(-gate, gate), Paint()..color = TakeStyle.warn.withValues(alpha: 0.25));
+    canvas.drawRRect(bar(-inTune, inTune),
+        Paint()..color = TakeStyle.good.withValues(alpha: 0.45));
+    canvas.drawLine(Offset(w / 2, 0), Offset(w / 2, size.height),
+        Paint()..color = const Color(0xFF5F6670));
+    final c = cents;
+    if (c == null || c.abs() > range) return;
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromCenter(center: Offset(x(c), mid), width: 4, height: size.height),
+            const Radius.circular(2)),
+        Paint()..color = TakeStyle.centsColor(c));
+  }
+
+  @override
+  bool shouldRepaint(_MeterPainter old) =>
+      old.cents != cents || old.gate != gate || old.inTune != inTune;
 }

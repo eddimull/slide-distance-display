@@ -12,8 +12,14 @@ class LearnContext {
   final Stream<CalFrame> frames;
   final SlideCalibration cal;
   final HighScores scores;
+
+  /// Turns the mic on, for the levels that need playing.
+  final Future<void> Function()? ensureMic;
   const LearnContext(
-      {required this.frames, required this.cal, required this.scores});
+      {required this.frames,
+      required this.cal,
+      required this.scores,
+      this.ensureMic});
 }
 
 /// A level opens once the best score in [gameId] reaches [score].
@@ -77,10 +83,19 @@ final learnLevels = <LearnLevel>[
   ),
   LearnLevel(
     level: 3,
-    title: 'Coming soon',
-    blurb: 'Needs playing: pitch and slide.',
+    levelName: playTheNote.levelName,
+    title: playTheNote.title,
+    gameId: playTheNote.id,
+    blurb: 'A note from F2 to F4 comes up: play it, with the slide in a '
+        'position for it. In tune earns a bonus.',
     needsPlaying: true,
     gate: LevelGate(noteFlash.id, noteFlash.title, 15000),
+    build: (c) => FlashCardScreen(
+        frames: c.frames,
+        cal: c.cal,
+        scores: c.scores,
+        spec: playTheNote,
+        ensureMic: c.ensureMic),
   ),
 ];
 

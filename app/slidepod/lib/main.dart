@@ -438,7 +438,12 @@ class _HomePageState extends State<HomePage> {
             ? const Center(child: CircularProgressIndicator())
             : LearnScreen(
                 learn: LearnContext(
-                    frames: _frames.stream, cal: _cal, scores: snap.data!),
+                    frames: _frames.stream,
+                    cal: _cal,
+                    scores: snap.data!,
+                    ensureMic: () async {
+                      if (!_micActive && !_source.isMock) await _toggleMic();
+                    }),
                 connected: _connected,
               ),
       );

@@ -37,6 +37,16 @@ class FlashCardRules {
 
   final int comboStep, maxMultiplier;
 
+  /// Playing levels: the note has to be sounded within this many cents of
+  /// the card's note, as well as the slide in a position for it, for the
+  /// whole hold. Null = no playing needed.
+  final double? pitchGateCents;
+
+  /// Within this many cents (the median over the hold) earns
+  /// [inTuneBonus] on top of the speed points.
+  final double inTuneCents;
+  final int inTuneBonus;
+
   const FlashCardRules({
     this.roundMs = 30000,
     this.tolerance = 0.3,
@@ -50,7 +60,12 @@ class FlashCardRules {
     this.maxPoints = 1500,
     this.comboStep = 3,
     this.maxMultiplier = 4,
+    this.pitchGateCents,
+    this.inTuneCents = 10,
+    this.inTuneBonus = 300,
   });
+
+  bool get needsPitch => pitchGateCents != null;
 
   int parMs(int distance) => parBaseMs + parPerPositionMs * distance;
 
@@ -90,6 +105,11 @@ class FlashCard {
 
   const FlashCard(
       {required this.id, required this.label, required this.positions, this.midi});
+
+  double get freq => 440.0 * math.pow(2, (midi! - 69) / 12);
+
+  /// How far [hz] is from this card's note, in cents.
+  double centsOff(double hz) => 1200 * math.log(hz / freq) / math.ln2;
 
   /// Positions away from [from] to the nearest that answers it.
   int distanceFrom(int from) =>
@@ -162,10 +182,13 @@ class CardResult {
   /// Shown to arrival; null = missed.
   final int? ms;
 
-  /// Points for the speed, the multiplier it scored at, and the two
-  /// multiplied.
-  final int base, multiplier;
+  /// Points for the speed, any in-tune bonus, the multiplier it scored at,
+  /// and the lot multiplied.
+  final int base, bonus, multiplier;
   final int parMs;
+
+  /// Playing levels: how far off the note was (median over the hold).
+  final double? cents;
 
   /// The combo after this card, and whether this card ended one.
   final int comboAfter;
@@ -177,13 +200,16 @@ class CardResult {
     required this.position,
     required this.ms,
     required this.base,
+    this.bonus = 0,
     required this.multiplier,
     required this.parMs,
+    this.cents,
     required this.comboAfter,
     this.brokeCombo = false,
   });
 
-  int get points => base * multiplier;
+  int get points => (base + bonus) * multiplier;
+  bool get inTune => bonus > 0;
   bool get hit => ms != null;
   bool get onPar => ms != null && ms! <= parMs;
   int get distance => card.distanceFrom(from);
@@ -213,8 +239,13 @@ class FlashCardRound {
   int? _roundEnds;
 
   /// When the slide entered an answering position, and which (null = not
-  /// in one).
+  /// in one); playing levels: the pitch over the hold so far.
   int? _enteredAt, _enteredPos;
+  final _holdCents = <double>[];
+
+  /// Playing levels: the pitch heard last, against the card's note
+  /// (null = nothing heard), for the screen's meter.
+  double? heardCents;
 
   /// Position (1–7) nearest the slide, last seen.
   int? _at;
@@ -282,8 +313,9 @@ class FlashCardRound {
   }
 
   /// [semis] is the slide's extension (0 = 1st, 6 = 7th), null when the
-  /// sensor has no reading (a blind sensor can't confirm a hold).
-  void update(int now, double? semis) {
+  /// sensor has no reading (a blind sensor can't confirm a hold). [freq]
+  /// is the pitch heard (playing levels; null = silence).
+  void update(int now, double? semis, {double? freq}) {
     if (semis != null) _at = (1 + semis.round()).clamp(1, 7);
     switch (phase) {
       case FlashPhase.idle:
@@ -309,11 +341,20 @@ class FlashCardRound {
             if ((semis - (p - 1)).abs() <= rules.tolerance) zone = p;
           }
         }
+        double? cents;
+        if (rules.needsPitch) {
+          cents = freq == null || freq <= 30 ? null : card!.centsOff(freq);
+          heardCents = cents;
+          // The right note, sounding, or it isn't there yet.
+          if (cents == null || cents.abs() > rules.pitchGateCents!) zone = null;
+        }
         if (zone != null) {
           if (zone != _enteredPos) {
             _enteredAt = now;
             _enteredPos = zone;
+            _holdCents.clear();
           }
+          if (cents != null) _holdCents.add(cents);
           if (now - _enteredAt! >= rules.holdMs) {
             _finish(now, _enteredAt! - _shownAt, zone);
             return;
@@ -332,6 +373,8 @@ class FlashCardRound {
     _shownAt = now;
     _enteredAt = null;
     _enteredPos = null;
+    _holdCents.clear();
+    heardCents = null;
     _phaseEnds = now + rules.timeoutMs;
     phase = FlashPhase.card;
   }
@@ -344,12 +387,21 @@ class FlashCardRound {
     final before = combo;
     combo = onPar ? combo + 1 : 0;
     bestCombo = math.max(bestCombo, combo);
+    double? cents;
+    if (ms != null && _holdCents.isNotEmpty) {
+      final sorted = List.of(_holdCents)..sort();
+      cents = sorted[sorted.length ~/ 2];
+    }
     results.add(CardResult(
       card: card!,
       from: _from,
       position: position,
       ms: ms,
       base: ms == null ? 0 : rules.points(ms, d),
+      bonus: cents != null && cents.abs() <= rules.inTuneCents
+          ? rules.inTuneBonus
+          : 0,
+      cents: cents,
       multiplier: mult,
       parMs: par,
       comboAfter: combo,
