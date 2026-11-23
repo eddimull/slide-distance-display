@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 class SlideData {
@@ -191,7 +191,7 @@ class SlidePodBle implements SlidePodSource {
   bool get isMock => false;
 
   Future<List<ScanResult>> scan({Duration timeout = const Duration(seconds: 4)}) async {
-    if (kIsWeb) return _scanWeb();
+    if (kIsWeb) return scanWeb();
     final results = <ScanResult>[];
     final sub = FlutterBluePlus.onScanResults.listen((r) {
       for (final sr in r) {
@@ -224,17 +224,23 @@ class SlidePodBle implements SlidePodSource {
   /// page use services named here, so SlidePod's service must be listed
   /// or discoverServices finds nothing. Must run from a tap (the browser
   /// needs a user gesture) on an https page such as seventh.app/app.
-  Future<List<ScanResult>> _scanWeb() async {
+  @visibleForTesting
+  Future<List<ScanResult>> scanWeb() async {
     if (!await FlutterBluePlus.isSupported) {
       throw Exception('This browser has no Bluetooth: use Chrome or Edge');
     }
     final results = <ScanResult>[];
+    final picked = Completer<void>();
     final sub = FlutterBluePlus.onScanResults.listen((r) {
       for (final sr in r) {
         if (!results.any((e) => e.device.remoteId == sr.device.remoteId)) {
           results.add(sr);
         }
       }
+      if (results.isNotEmpty && !picked.isCompleted) picked.complete();
+    }, onError: (_) {
+      // The chooser was closed: nothing is coming.
+      if (!picked.isCompleted) picked.complete();
     });
     try {
       await FlutterBluePlus.startScan(
@@ -242,6 +248,9 @@ class SlidePodBle implements SlidePodSource {
         withNames: ['SlidePod'],
         webOptionalServices: [_svcUuid, _deviceInfoUuid],
       );
+      // The pick arrives during startScan but reaches onScanResults a moment
+      // after it returns (it's buffered); stopping now would drop it.
+      await picked.future.timeout(const Duration(seconds: 3), onTimeout: () {});
     } catch (_) {
       // The user closed the chooser: same as finding nothing.
     } finally {
