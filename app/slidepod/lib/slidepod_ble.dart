@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 class SlideData {
@@ -190,6 +191,7 @@ class SlidePodBle implements SlidePodSource {
   bool get isMock => false;
 
   Future<List<ScanResult>> scan({Duration timeout = const Duration(seconds: 4)}) async {
+    if (kIsWeb) return _scanWeb();
     final results = <ScanResult>[];
     final sub = FlutterBluePlus.onScanResults.listen((r) {
       for (final sr in r) {
@@ -209,6 +211,43 @@ class SlidePodBle implements SlidePodSource {
     // to end it before dropping the listener.
     await FlutterBluePlus.isScanning.where((s) => !s).first;
     await sub.cancel();
+    return results;
+  }
+
+  /// Device Information (0x180A): lets the web build read the pod's serial
+  /// once the firmware reports one.
+  static final _deviceInfoUuid = Guid("180a");
+
+  /// Web Bluetooth has no background scan: startScan opens the browser's
+  /// chooser and returns once the user has picked a pod (or closed it). The
+  /// filters keep the chooser to SlidePods, and the browser only lets the
+  /// page use services named here, so SlidePod's service must be listed
+  /// or discoverServices finds nothing. Must run from a tap (the browser
+  /// needs a user gesture) on an https page such as seventh.app/app.
+  Future<List<ScanResult>> _scanWeb() async {
+    if (!await FlutterBluePlus.isSupported) {
+      throw Exception('This browser has no Bluetooth: use Chrome or Edge');
+    }
+    final results = <ScanResult>[];
+    final sub = FlutterBluePlus.onScanResults.listen((r) {
+      for (final sr in r) {
+        if (!results.any((e) => e.device.remoteId == sr.device.remoteId)) {
+          results.add(sr);
+        }
+      }
+    });
+    try {
+      await FlutterBluePlus.startScan(
+        withServices: [_svcUuid],
+        withNames: ['SlidePod'],
+        webOptionalServices: [_svcUuid, _deviceInfoUuid],
+      );
+    } catch (_) {
+      // The user closed the chooser: same as finding nothing.
+    } finally {
+      await FlutterBluePlus.stopScan();
+      await sub.cancel();
+    }
     return results;
   }
 
