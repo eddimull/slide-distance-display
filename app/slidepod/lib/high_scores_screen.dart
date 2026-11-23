@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 
+import 'account.dart';
 import 'high_scores.dart';
+import 'leaderboard_view.dart';
 import 'take_style.dart';
 
-/// One game's high-score table: the top three on a podium, then the list.
+/// One game's high scores: this phone's best rounds (the top three on a
+/// podium, then the list) and, where offered, the online leaderboards.
 class HighScoresScreen extends StatelessWidget {
   final HighScores scores;
   final String gameId, title, subtitle;
+
+  /// For the online leaderboards' tabs (none when null or not offered).
+  final Account? account;
 
   const HighScoresScreen({
     super.key,
@@ -14,6 +20,7 @@ class HighScoresScreen extends StatelessWidget {
     required this.gameId,
     required this.title,
     required this.subtitle,
+    this.account,
   });
 
   static String dateLabel(DateTime t, {DateTime? now}) {
@@ -32,8 +39,9 @@ class HighScoresScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final top = scores.top(gameId);
-    return Scaffold(
+    final a = account;
+    final online = a != null && a.available;
+    final screen = Scaffold(
       backgroundColor: TakeStyle.ground,
       appBar: AppBar(
         backgroundColor: TakeStyle.ground,
@@ -48,8 +56,34 @@ class HighScoresScreen extends StatelessWidget {
                 style: const TextStyle(fontSize: 12, color: TakeStyle.muted)),
           ],
         ),
+        bottom: online
+            ? const TabBar(
+                labelColor: TakeStyle.text,
+                unselectedLabelColor: TakeStyle.muted,
+                indicatorColor: TakeStyle.accent,
+                tabs: [
+                  Tab(key: Key('tab_phone'), text: 'This phone'),
+                  Tab(key: Key('tab_week'), text: 'This week'),
+                  Tab(key: Key('tab_all'), text: 'All time'),
+                ],
+              )
+            : null,
       ),
-      body: top.isEmpty
+      body: online
+          ? TabBarView(children: [
+              _local(),
+              LeaderboardView(account: a, gameId: gameId, week: true),
+              LeaderboardView(account: a, gameId: gameId, week: false),
+            ])
+          : _local(),
+    );
+    return online ? DefaultTabController(length: 3, child: screen) : screen;
+  }
+
+  /// The best rounds kept on this phone.
+  Widget _local() {
+    final top = scores.top(gameId);
+    return top.isEmpty
           ? const Center(
               child: Text('No scores yet. Play a round!',
                   style: TextStyle(color: TakeStyle.muted)),
@@ -124,8 +158,7 @@ class HighScoresScreen extends StatelessWidget {
                       style: TextStyle(fontSize: 12, color: TakeStyle.muted)),
                 ),
               ],
-            ),
-    );
+            );
   }
 
   Widget _podium(List<ScoreEntry> top) {

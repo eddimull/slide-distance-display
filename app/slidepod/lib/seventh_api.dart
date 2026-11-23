@@ -55,6 +55,41 @@ class PostedRound {
   const PostedRound(this.score, this.all, this.week);
 }
 
+/// One player's best on a board.
+class BoardEntry {
+  final int rank, userId, score, found, bestCombo;
+  final String? displayName;
+  final DateTime at;
+  const BoardEntry({
+    required this.rank,
+    required this.userId,
+    required this.displayName,
+    required this.score,
+    required this.found,
+    required this.bestCombo,
+    required this.at,
+  });
+
+  static BoardEntry fromJson(Map<String, dynamic> m) => BoardEntry(
+        rank: (m['rank'] as num).toInt(),
+        userId: (m['user_id'] as num).toInt(),
+        displayName: m['display_name'] as String?,
+        score: (m['score'] as num).toInt(),
+        found: (m['found'] as num?)?.toInt() ?? 0,
+        bestCombo: (m['best_combo'] as num?)?.toInt() ?? 0,
+        at: DateTime.parse(m['achieved_at'] as String).toLocal(),
+      );
+}
+
+/// A game's online board for one period: the top [entries], how many
+/// [players] are on it, and (signed in, with a score there) [me].
+class Board {
+  final int players;
+  final List<BoardEntry> entries;
+  final Standing? me;
+  const Board(this.players, this.entries, this.me);
+}
+
 class SeventhApi {
   final String base;
   final http.Client _http;
@@ -111,6 +146,22 @@ class SeventhApi {
     });
     return PostedRound((m['score'] as num).toInt(), Standing.fromJson(m['all']),
         Standing.fromJson(m['week']));
+  }
+
+  /// [week]: this week's board (from Monday, UTC), else all time. With
+  /// [token], the board says where the player stands.
+  Future<Board> leaderboard(String game, {bool week = false, String? token}) async {
+    final m = await _send(
+        'GET', '/leaderboards/$game?period=${week ? 'week' : 'all'}',
+        token: token);
+    return Board(
+      (m['players'] as num?)?.toInt() ?? 0,
+      [
+        for (final e in (m['entries'] as List? ?? const []))
+          BoardEntry.fromJson(e as Map<String, dynamic>)
+      ],
+      Standing.fromJson(m['me']),
+    );
   }
 
   Future<Map<String, dynamic>> _send(String method, String path,

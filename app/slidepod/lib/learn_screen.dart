@@ -157,6 +157,7 @@ class _LearnScreenState extends State<LearnScreen> {
           gameId: l.gameId!,
           title: l.title,
           subtitle: '${l.title} · Level ${l.level}',
+          account: widget.learn.account,
         ),
       ));
 

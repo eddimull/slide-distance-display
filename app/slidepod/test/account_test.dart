@@ -9,6 +9,8 @@ import 'package:slidepod/account.dart';
 import 'package:slidepod/account_screen.dart';
 import 'package:slidepod/flash_card_game.dart';
 import 'package:slidepod/flash_card_screen.dart' show ordinal;
+import 'package:slidepod/high_scores.dart';
+import 'package:slidepod/high_scores_screen.dart';
 import 'package:slidepod/seventh_api.dart';
 
 /// A stand-in for seventh-server: records requests, answers from [routes].
@@ -18,7 +20,9 @@ class FakeServer {
 
   late final client = MockClient((req) async {
     requests.add(req);
-    final (status, body) = routes['${req.method} ${req.url.path}'] ??
+    final (status, body) = routes['${req.method} ${req.url}'
+            .replaceFirst('https://seventh.test', '')] ??
+        routes['${req.method} ${req.url.path}'] ??
         (404, {'message': 'Not found'});
     return http.Response(body == null ? '' : jsonEncode(body), status,
         headers: {'content-type': 'application/json'});
@@ -217,5 +221,87 @@ void main() {
 
     expect(find.text('Sign-in failed: Not issued for this app.'), findsOneWidget);
     expect(a.signedIn, isFalse);
+  });
+
+  Map<String, Object?> entry(int rank, int id, String? name, int score) => {
+        'rank': rank,
+        'user_id': id,
+        'display_name': name,
+        'score': score,
+        'found': 6,
+        'best_combo': 2,
+        'achieved_at': '2026-11-23T14:16:39+00:00',
+      };
+
+  Future<void> openScores(WidgetTester tester, Account a) async {
+    await tester.pumpWidget(MaterialApp(
+        home: HighScoresScreen(
+      scores: HighScores(await SharedPreferences.getInstance()),
+      gameId: 'position_flash',
+      title: 'Position Flash',
+      subtitle: 'Position Flash · Level 1',
+      account: a,
+    )));
+  }
+
+  testWidgets('leaderboards: this week and all time, with your place',
+      (tester) async {
+    final (a, server) = await account();
+    server.routes['POST /api/auth/google'] =
+        (200, {'token': 'tok-1', 'user': {'id': 7, 'display_name': 'Slider'}, 'needs_name': false});
+    await a.signInWithGoogle('t');
+    server.routes['GET /api/leaderboards/position_flash?period=week'] = (200, {
+      'players': 2,
+      'entries': [entry(1, 3, 'Ace', 5000), entry(2, 7, 'Slider', 4055)],
+      'me': {'rank': 2, 'score': 4055},
+    });
+    server.routes['GET /api/leaderboards/position_flash?period=all'] = (200, {
+      'players': 120,
+      'entries': [entry(1, 3, 'Ace', 9000), entry(2, 9, null, 8000)],
+      'me': {'rank': 61, 'score': 4055},
+    });
+
+    await openScores(tester, a);
+    expect(find.text('No scores yet. Play a round!'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('tab_week')));
+    await tester.pumpAndSettle();
+    expect(find.text('Ace'), findsOneWidget);
+    expect(find.text('Slider (you)'), findsOneWidget);
+    expect(find.byKey(const Key('my_place')), findsNothing);
+    expect(server.last('GET', '/leaderboards/position_flash').headers['Authorization'],
+        'Bearer tok-1');
+
+    await tester.tap(find.byKey(const Key('tab_all')));
+    await tester.pumpAndSettle();
+    expect(find.text('Unnamed player'), findsOneWidget);
+    expect(find.text('You\'re 61st of 120, with 4055.'), findsOneWidget);
+  });
+
+  testWidgets('leaderboards: signed out asks to sign in; errors can retry',
+      (tester) async {
+    final (a, server) = await account();
+    server.routes['GET /api/leaderboards/position_flash'] =
+        (503, {'message': 'Down for maintenance.'});
+
+    await openScores(tester, a);
+    await tester.tap(find.byKey(const Key('tab_week')));
+    await tester.pumpAndSettle();
+    expect(find.text('Down for maintenance.'), findsOneWidget);
+    expect(server.last('GET', '/leaderboards/position_flash').headers['Authorization'],
+        isNull);
+
+    server.routes['GET /api/leaderboards/position_flash'] =
+        (200, {'players': 0, 'entries': [], 'me': null});
+    await tester.tap(find.byKey(const Key('retry')));
+    await tester.pumpAndSettle();
+    expect(find.text('No scores this week yet. Be the first!'), findsOneWidget);
+    expect(find.byKey(const Key('board_sign_in')), findsOneWidget);
+  });
+
+  testWidgets('no leaderboard tabs on desktop', (tester) async {
+    final (a, _) = await account(platform: null);
+    await openScores(tester, a);
+    expect(find.byKey(const Key('tab_week')), findsNothing);
   });
 }
