@@ -43,8 +43,15 @@ class SlidePodApp extends StatelessWidget {
 }
 
 class HomePage extends StatefulWidget {
+  /// Simulated SlidePod data instead of Bluetooth: debug builds only (as is
+  /// the BLE/Mock switch). `--dart-define=MOCK=false` starts a debug build
+  /// on the real thing.
   final bool autoMock;
-  const HomePage({super.key, this.autoMock = kDebugMode});
+  const HomePage({
+    super.key,
+    this.autoMock =
+        kDebugMode && const bool.fromEnvironment('MOCK', defaultValue: true),
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
