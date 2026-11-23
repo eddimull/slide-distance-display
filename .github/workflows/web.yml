@@ -1,0 +1,71 @@
+name: Web app
+
+# Builds the Flutter web app for https://seventh.app/app/ and publishes it as
+# the `web` release's slidepod-web.tar.gz. seventh-server's Forge deploy
+# fetches that file (scripts/fetch-web-app.sh there), so after publishing
+# this triggers a Forge deploy.
+
+on:
+  push:
+    branches: [main]
+    paths: ['app/slidepod/**', '.github/workflows/web.yml']
+  pull_request:
+    paths: ['app/slidepod/**', '.github/workflows/web.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/slidepod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.41.6
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build web --release --base-href /app/
+      - run: tar -C build/web -czf slidepod-web.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slidepod-web
+          path: app/slidepod/slidepod-web.tar.gz
+
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: slidepod-web
+      - name: Publish to the `web` release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view web >/dev/null 2>&1 ||
+            gh release create web --title "Web app (latest)" --latest=false \
+              --notes "The latest web build for https://seventh.app/app/, replaced on every push to main."
+          gh release upload web slidepod-web.tar.gz --clobber
+      - name: Deploy seventh.app
+        env:
+          FORGE_DEPLOY_HOOK: ${{ secrets.FORGE_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$FORGE_DEPLOY_HOOK" ]; then
+            echo "::warning::FORGE_DEPLOY_HOOK isn't set; the new build goes live on seventh.app's next deploy."
+            exit 0
+          fi
+          curl --fail-with-body -sS -X POST "$FORGE_DEPLOY_HOOK"
