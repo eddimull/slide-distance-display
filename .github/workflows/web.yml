@@ -3,7 +3,8 @@ name: Web app
 # Builds the Flutter web app for https://seventh.app/app/ and publishes it as
 # the `web` release's slidepod-web.tar.gz. seventh-server's Forge deploy
 # fetches that file (scripts/fetch-web-app.sh there), so after publishing
-# this triggers a Forge deploy.
+# this triggers a Forge deploy, waits for the new build to be live, and purges
+# Cloudflare's copy of /app/.
 
 on:
   push:
@@ -61,6 +62,7 @@ jobs:
               --notes "The latest web build for https://seventh.app/app/, replaced on every push to main."
           gh release upload web slidepod-web.tar.gz --clobber
       - name: Deploy seventh.app
+        id: deploy
         env:
           FORGE_DEPLOY_HOOK: ${{ secrets.FORGE_DEPLOY_HOOK }}
         run: |
@@ -68,4 +70,43 @@ jobs:
             echo "::warning::FORGE_DEPLOY_HOOK isn't set; the new build goes live on seventh.app's next deploy."
             exit 0
           fi
-          curl --fail-with-body -sS -X POST "$FORGE_DEPLOY_HOOK"
+          # The build's main.dart.js, to tell when seventh.app serves it.
+          mkdir web && tar -xzf slidepod-web.tar.gz -C web ./main.dart.js
+          want=$(sha256sum web/main.dart.js | cut -d' ' -f1)
+          live() {
+            # A query string Cloudflare hasn't cached, so this reaches the server.
+            got=$(curl -sf "https://seventh.app/app/main.dart.js?build=$want-$RANDOM" | sha256sum | cut -d' ' -f1)
+            [ "$got" = "$want" ]
+          }
+          # Forge ignores a hook while a deploy is running (say, seventh-server's
+          # own), so call it again if the build isn't live after a few minutes.
+          for attempt in 1 2 3; do
+            curl --fail-with-body -sS -X POST "$FORGE_DEPLOY_HOOK"
+            for i in $(seq 1 24); do
+              if live; then echo "Live after deploy $attempt."; echo "live=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+              sleep 10
+            done
+            echo "Not live after 4 minutes (deploy $attempt)."
+          done
+          echo "::error::seventh.app isn't serving this build; check the deploy in Forge."
+          exit 1
+
+      - name: Purge Cloudflare's copy of /app/
+        if: steps.deploy.outputs.live == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ZONE_ID" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ZONE_ID isn't set; Cloudflare may serve the old build until its cache expires."
+            exit 0
+          fi
+          purge() {
+            curl -sS -X POST "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+              --data "$1" | tee /dev/stderr | jq -e '.success' >/dev/null
+          }
+          purge '{"prefixes":["seventh.app/app/"]}' && exit 0
+          # The web app is most of what's cached on seventh.app.
+          echo "::warning::Purging by prefix failed; purging everything instead."
+          purge '{"purge_everything":true}'
