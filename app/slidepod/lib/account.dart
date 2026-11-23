@@ -84,6 +84,10 @@ class Account extends ChangeNotifier {
 
   /// Posts a finished round for the leaderboards. Null when signed out or
   /// not offered here; throws [ApiException] if the server refused it.
+  /// A game's online board; with [player]'s place when signed in.
+  Future<Board> leaderboard(String game, {bool week = false}) =>
+      api.leaderboard(game, week: week, token: _token);
+
   Future<PostedRound?> postRound(
       String game, int rulesVersion, FlashCardRound round) async {
     final t = _token;

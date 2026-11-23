@@ -304,6 +304,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
           gameId: widget.spec.id,
           title: widget.spec.title,
           subtitle: '${widget.spec.title} · Level ${widget.spec.level}',
+          account: widget.account,
         ),
       ));
 
