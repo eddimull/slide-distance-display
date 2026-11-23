@@ -1,4 +1,4 @@
-package com.slidepod.slidepod
+package app.seventh
 
 import io.flutter.embedding.android.FlutterActivity
 

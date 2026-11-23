@@ -4,10 +4,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import 'account.dart';
 import 'flash_card_game.dart';
 import 'gliss_take.dart';
 import 'high_scores.dart';
 import 'high_scores_screen.dart';
+import 'seventh_api.dart';
 import 'slide_calibration.dart';
 import 'staff_note.dart';
 import 'take_style.dart';
@@ -30,6 +32,10 @@ class FlashGameSpec {
   final FlashDeck Function() deck;
   final FlashCardRules rules;
 
+  /// The server's rules version for this game (seventh-server's
+  /// config/games.php). Bump it with any change to [rules] or scoring.
+  final int rulesVersion;
+
   const FlashGameSpec({
     required this.id,
     required this.title,
@@ -41,6 +47,7 @@ class FlashGameSpec {
     required this.notes,
     required this.deck,
     this.rules = const FlashCardRules(),
+    this.rulesVersion = 1,
   });
 
   bool get needsPitch => rules.needsPitch;
@@ -101,6 +108,9 @@ class FlashCardScreen extends StatefulWidget {
   final SlideCalibration cal;
   final HighScores scores;
 
+  /// Signed in: rounds also go to the online leaderboards.
+  final Account? account;
+
   /// Overrides the game's own rules (tests).
   final FlashCardRules? rules;
 
@@ -117,6 +127,7 @@ class FlashCardScreen extends StatefulWidget {
     required this.frames,
     required this.cal,
     required this.scores,
+    this.account,
     this.rules,
     this.ensureMic,
     this.spec = positionFlash,
@@ -134,6 +145,15 @@ String seconds(num ms) => '${(ms / 1000).toStringAsFixed(2)} s';
 String clockSeconds(int ms) {
   final s = (ms / 1000).ceil();
   return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+}
+
+/// 1st, 2nd, 3rd, 4th … 11th, 12th, 13th … 21st.
+String ordinal(int n) {
+  final teen = n % 100 >= 11 && n % 100 <= 13;
+  final suffix = teen
+      ? 'th'
+      : switch (n % 10) { 1 => 'st', 2 => 'nd', 3 => 'rd', _ => 'th' };
+  return '$n$suffix';
 }
 
 String ordinalPos(int p) => switch (p) {
@@ -189,6 +209,12 @@ class _FlashCardScreenState extends State<FlashCardScreen>
   int? _bestBefore;
   bool _submitted = false;
 
+  /// The online leaderboards, after a round: where it placed, or why it
+  /// didn't post.
+  PostedRound? _posted;
+  String? _postError;
+  bool _posting = false;
+
   int get _now => widget.clock?.call() ?? _clock.elapsedMilliseconds;
   FlashCardRules get _r => widget.rules ?? widget.spec.rules;
 
@@ -219,6 +245,8 @@ class _FlashCardScreenState extends State<FlashCardScreen>
     if (!mounted) return;
     _rank = null;
     _submitted = false;
+    _posted = null;
+    _postError = null;
     _bestBefore = widget.scores.best(widget.spec.id)?.score;
     _round.start(_now);
     if (!_ticker.isActive) _ticker.start();
@@ -239,6 +267,35 @@ class _FlashCardScreenState extends State<FlashCardScreen>
       ),
     );
     if (mounted) setState(() => _rank = rank);
+    await _post();
+  }
+
+  Future<void> _post() async {
+    final a = widget.account;
+    // Rules overridden (tests) can't be scored by the server.
+    if (a == null || !a.signedIn || widget.rules != null) return;
+    setState(() => _posting = true);
+    try {
+      final p =
+          await a.postRound(widget.spec.id, widget.spec.rulesVersion, _round);
+      if (mounted) setState(() => _posted = p);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _postError = e.message);
+    } finally {
+      if (mounted) setState(() => _posting = false);
+    }
+  }
+
+  /// "3rd this week · 41st all time", or why the round isn't on the boards.
+  String? get _onlineLine {
+    if (_posting) return 'Posting to the leaderboards…';
+    if (_postError != null) return _postError;
+    final p = _posted;
+    if (p == null) return null;
+    return [
+      if (p.week != null) '${ordinal(p.week!.rank)} this week',
+      if (p.all != null) '${ordinal(p.all!.rank)} all time',
+    ].join(' · ');
   }
 
   void _openScores() => Navigator.of(context).push(MaterialPageRoute(
@@ -824,6 +881,16 @@ class _FlashCardScreenState extends State<FlashCardScreen>
           Text('$beat more than your last best',
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 13, color: TakeStyle.muted)),
+        if (_onlineLine case final line?)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(line,
+                key: const Key('online'),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 13,
+                    color: _postError != null ? TakeStyle.warn : TakeStyle.accent)),
+          ),
         const SizedBox(height: 16),
         Row(
           children: [
