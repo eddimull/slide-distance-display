@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'account.dart';
 import 'calibration_screen.dart';
 import 'flash_card_screen.dart';
 import 'gliss_take.dart';
@@ -13,6 +14,7 @@ import 'one_euro.dart';
 import 'pitch_detector.dart';
 import 'position_colors.dart';
 import 'record_screen.dart';
+import 'seventh_api.dart';
 import 'slide_calibration.dart';
 import 'slidepod_ble.dart';
 import 'take.dart';
@@ -128,6 +130,17 @@ class _HomePageState extends State<HomePage> {
   Future<TakeStore>? _store;
   // High scores for the Learn games; opened on first use.
   Future<HighScores>? _scores;
+  Future<(HighScores, Account)>? _learnReady;
+  Future<Account>? _account;
+
+  /// The online leaderboards account, opened once (and checked with the
+  /// server in the background).
+  Future<Account> _openAccount() => _account ??= (() async {
+        final a = Account(SeventhApi(), await SharedPreferences.getInstance(),
+            platform: seventhPlatform());
+        unawaited(a.refresh());
+        return a;
+      })();
   // Bottom tabs: Live, Takes, Learn.
   int _tab = 0;
   // Easy mode's "Practise your positions" card, until it's closed.
@@ -432,15 +445,19 @@ class _HomePageState extends State<HomePage> {
       );
 
   /// The Learn tab: games for learning the positions.
-  Widget _learnTab() => FutureBuilder<HighScores>(
-        future: _scores ??= HighScores.open(),
+  Widget _learnTab() => FutureBuilder<(HighScores, Account)>(
+        future: _learnReady ??= (() async {
+          final scores = await (_scores ??= HighScores.open());
+          return (scores, await _openAccount());
+        })(),
         builder: (context, snap) => snap.data == null
             ? const Center(child: CircularProgressIndicator())
             : LearnScreen(
                 learn: LearnContext(
                     frames: _frames.stream,
                     cal: _cal,
-                    scores: snap.data!,
+                    scores: snap.data!.$1,
+                    account: snap.data!.$2,
                     ensureMic: () async {
                       if (!_micActive && !_source.isMock) await _toggleMic();
                     }),
@@ -451,10 +468,11 @@ class _HomePageState extends State<HomePage> {
   /// Straight into the first game, from Easy mode's card.
   Future<void> _openPractice() async {
     final scores = await (_scores ??= HighScores.open());
+    final account = await _openAccount();
     if (!mounted) return;
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) =>
-          FlashCardScreen(frames: _frames.stream, cal: _cal, scores: scores),
+      builder: (_) => FlashCardScreen(
+          frames: _frames.stream, cal: _cal, scores: scores, account: account),
     ));
   }
 

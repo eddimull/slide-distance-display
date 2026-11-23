@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'account.dart';
+import 'account_screen.dart';
 import 'flash_card_screen.dart';
 import 'gliss_take.dart';
 import 'high_scores.dart';
@@ -13,12 +15,16 @@ class LearnContext {
   final SlideCalibration cal;
   final HighScores scores;
 
+  /// The online leaderboards account (null: not offered).
+  final Account? account;
+
   /// Turns the mic on, for the levels that need playing.
   final Future<void> Function()? ensureMic;
   const LearnContext(
       {required this.frames,
       required this.cal,
       required this.scores,
+      this.account,
       this.ensureMic});
 }
 
@@ -67,8 +73,8 @@ final learnLevels = <LearnLevel>[
     gameId: FlashCardScreen.gameId,
     blurb: 'A position number comes up: put the slide there and hold it. '
         'Faster scores more.',
-    build: (c) =>
-        FlashCardScreen(frames: c.frames, cal: c.cal, scores: c.scores),
+    build: (c) => FlashCardScreen(
+        frames: c.frames, cal: c.cal, scores: c.scores, account: c.account),
   ),
   LearnLevel(
     level: 2,
@@ -79,7 +85,11 @@ final learnLevels = <LearnLevel>[
         'a position that plays it.',
     gate: const LevelGate(FlashCardScreen.gameId, FlashCardScreen.title, 15000),
     build: (c) => FlashCardScreen(
-        frames: c.frames, cal: c.cal, scores: c.scores, spec: noteFlash),
+        frames: c.frames,
+        cal: c.cal,
+        scores: c.scores,
+        account: c.account,
+        spec: noteFlash),
   ),
   LearnLevel(
     level: 3,
@@ -94,6 +104,7 @@ final learnLevels = <LearnLevel>[
         frames: c.frames,
         cal: c.cal,
         scores: c.scores,
+        account: c.account,
         spec: playTheNote,
         ensureMic: c.ensureMic),
   ),
@@ -160,6 +171,21 @@ class _LearnScreenState extends State<LearnScreen> {
         automaticallyImplyLeading: false,
         title: const Text('Learn',
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
+        actions: [
+          if (widget.learn.account case final a? when a.available)
+            ListenableBuilder(
+              listenable: a,
+              builder: (context, _) => IconButton(
+                key: const Key('account'),
+                tooltip: a.signedIn ? 'Leaderboards account' : 'Sign in for leaderboards',
+                icon: Icon(a.signedIn
+                    ? Icons.account_circle
+                    : Icons.account_circle_outlined),
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => AccountScreen(account: a))),
+              ),
+            ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
