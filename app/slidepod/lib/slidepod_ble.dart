@@ -72,6 +72,11 @@ abstract class SlidePodSource {
 
   /// Flashes the pod's LED white a few times, to show which pod this is.
   Future<void> blink();
+
+  /// The connected pod's battery, kept up to date (firmware 0.4 and up;
+  /// null otherwise).
+  PodPower? get power;
+  Stream<PodPower?> get powerStream;
   void dispose();
 }
 
@@ -123,6 +128,14 @@ class SlidePodMock implements SlidePodSource {
 
   @override
   Future<void> blink() async {}
+
+  @override
+  PodPower? get power => _connected
+      ? const PodPower(percent: 72, usb: false, millivolts: 3960)
+      : null;
+  @override
+  Stream<PodPower?> get powerStream =>
+      _connectionController.stream.map((_) => power);
 
   @override
   Future<void> connectFirst() async {
@@ -213,6 +226,15 @@ class SlidePodBle implements SlidePodSource {
   static final _ledUuid = Guid("d5e40003-7537-4463-a441-27f2d3140fab");
   static final _nameUuid = Guid("d5e40004-7537-4463-a441-27f2d3140fab");
   static final _infoUuid = Guid("d5e40005-7537-4463-a441-27f2d3140fab");
+  static final _powerUuid = Guid("d5e40006-7537-4463-a441-27f2d3140fab");
+  PodPower? _power;
+  StreamSubscription? _powerSub;
+  final _powerController = StreamController<PodPower?>.broadcast();
+
+  @override
+  PodPower? get power => _connected ? _power : null;
+  @override
+  Stream<PodPower?> get powerStream => _powerController.stream;
   BluetoothCharacteristic? _ledChr; // absent on older firmware
   BluetoothCharacteristic? _nameChr; // firmware 0.3 and up
   PodInfo? _pod;
@@ -352,13 +374,15 @@ class SlidePodBle implements SlidePodSource {
     _pod = null;
     for (final svc in services) {
       if (svc.serviceUuid != _svcUuid) continue;
-      BluetoothCharacteristic? infoChr;
+      BluetoothCharacteristic? infoChr, powerChr;
       for (final chr in svc.characteristics) {
         if (chr.characteristicUuid == _ledUuid) _ledChr = chr;
         if (chr.characteristicUuid == _nameUuid) _nameChr = chr;
         if (chr.characteristicUuid == _infoUuid) infoChr = chr;
+        if (chr.characteristicUuid == _powerUuid) powerChr = chr;
       }
       await _readIdentity(infoChr);
+      await _watchPower(powerChr);
       // Show which pod this is before the data (and the app's LED colours)
       // starts.
       await blink();
@@ -382,6 +406,25 @@ class SlidePodBle implements SlidePodSource {
       _pod = PodInfo.fromInfo(await infoChr.read(), name);
     } catch (_) {
       _pod = null; // identity is extra; never fail the connection over it
+    }
+  }
+
+  Future<void> _watchPower(BluetoothCharacteristic? chr) async {
+    _powerSub?.cancel();
+    _powerSub = null;
+    _power = null;
+    _powerController.add(null);
+    if (chr == null) return;
+    try {
+      _powerSub = chr.onValueReceived.listen((b) {
+        _power = PodPower.fromBytes(b);
+        _powerController.add(_power);
+      });
+      await chr.setNotifyValue(true);
+      _power = PodPower.fromBytes(await chr.read());
+      _powerController.add(_power);
+    } catch (_) {
+      // The battery is extra; never fail the connection over it.
     }
   }
 
@@ -427,7 +470,9 @@ class SlidePodBle implements SlidePodSource {
   void dispose() {
     _notifySub?.cancel();
     _stateSub?.cancel();
+    _powerSub?.cancel();
     _dataController.close();
     _connectionController.close();
+    _powerController.close();
   }
 }

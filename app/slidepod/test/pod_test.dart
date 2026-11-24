@@ -52,6 +52,10 @@ class _FakePod implements SlidePodSource {
   @override
   Future<void> blink() async => blinks++;
   @override
+  PodPower? get power => null;
+  @override
+  Stream<PodPower?> get powerStream => const Stream.empty();
+  @override
   bool get connected => true;
   @override
   bool get isMock => true;
@@ -109,6 +113,16 @@ void main() {
       expect(podNameProblem('♭' * 7), isNotNull); // 21 bytes
       expect(podNameProblem('   '), isNotNull);
       expect(podNameProblem('tab\there'), isNotNull);
+    });
+
+    test('battery', () {
+      final p = PodPower.fromBytes([72, 0, 0x78, 0x0F])!;
+      expect((p.percent, p.usb, p.millivolts, p.label), (72, false, 3960, '72\u00A0%'));
+      expect(PodPower.fromBytes([100, 1, 0, 0])!.label, 'Charging');
+      expect(PodPower.fromBytes([0xFF, 0, 0, 0])!.percent, isNull);
+      expect(PodPower.fromBytes([10, 0, 0, 0])!.low, isTrue);
+      expect(PodPower.fromBytes([10, 1, 0, 0])!.low, isFalse);
+      expect(PodPower.fromBytes([1, 2]), isNull);
     });
 
     test('older firmware advertises only "SlidePod"', () {

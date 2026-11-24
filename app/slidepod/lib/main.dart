@@ -194,6 +194,9 @@ class _HomePageState extends State<HomePage> {
     _source.dataStream.listen((raw) {
       if (mounted) _onReading(raw);
     });
+    _source.powerStream.listen((_) {
+      if (mounted && _connected) setState(() => _status = _podStatus());
+    });
     _source.connectionStream.listen((c) {
       if (mounted) {
         setState(() {
@@ -602,8 +605,12 @@ class _HomePageState extends State<HomePage> {
     if (mounted) setState(() => _status = _podStatus());
   }
 
-  String _podStatus() =>
-      _source.pod?.name ?? (_source.isMock ? 'Mock connected' : 'Connected');
+  String _podStatus() {
+    final name =
+        _source.pod?.name ?? (_source.isMock ? 'Mock connected' : 'Connected');
+    final power = _source.power;
+    return power == null ? name : '$name · ${power.label}';
+  }
 
   /// Just connected: remember the pod, and if it's linked to the account,
   /// tell the server it was seen (with its name and firmware).
