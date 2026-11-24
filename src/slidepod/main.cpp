@@ -91,6 +91,39 @@
   // made the modes flap every ~0.5 s around 6th-7th (2026-11-20 capture).
   static constexpr uint8_t TOF_MISSES_TO_NEAR = 8;
 
+  // And the other way: Short with the narrow 4x8 view can't see the slide
+  // past ~550 mm, so near mode never got the valid reading over 500 mm it
+  // needed to switch to far, and the pod sat in near reporting nothing at
+  // 7th (about half the readings, 2026-11-24). Medium 6x6 reads 7th 100%
+  // (622 mm, sd 4.6, in a held-still sweep of the far settings). So after
+  // this many misses in a row in near mode (~80 ms), try far.
+  static constexpr uint8_t TOF_MISSES_TO_FAR = 4;
+
+  // The first readings after a mode change are often invalid while the
+  // sensor settles. Counted as misses, they switched straight back, and
+  // the pod flapped near/far missing most readings at 6th-7th
+  // (2026-11-24). They aren't counted.
+  static constexpr uint8_t TOF_SETTLE = 3;
+  static uint8_t tof_settling = 0;
+
+  // The library calibrates on the first reading after ranging starts and
+  // keeps it. Far mode starts the moment the slide passes 500 mm, often
+  // still moving, and then missed ~45% at 6th-7th (WrapTargetFail) where a
+  // start with the slide held still read ~100% (2026-11-24). So when far
+  // misses with the slide last seen far out, start far again (a fresh
+  // calibration) rather than dropping to near, which can't see it there.
+  static uint16_t tof_last_mm = 0;
+
+  // Misses interleaved with good readings (about half, at 6th) never made
+  // 8 in a row, so the restart waited ~3 s. So far mode also restarts when
+  // TOF_FAR_RECAL_MISSES of the last 16 readings missed, and once
+  // TOF_FAR_RECAL_MS after it starts, when the slide has mostly stopped.
+  static constexpr uint8_t TOF_FAR_RECAL_MISSES = 6;
+  static constexpr uint32_t TOF_FAR_RECAL_MS = 250;
+  static uint16_t tof_recent = 0;      // last 16 far readings, 1 = miss
+  static uint32_t tof_far_since = 0;   // when far mode was started from near
+  static bool tof_far_recal_done = false;
+
   static bool tof_init() {
     tof.setTimeout(500);
     return tof.init();
@@ -110,8 +143,14 @@
       tof.setROICenter(TOF_ROI_CENTRE);
       tof.startContinuous(19);
     }
+    if (far && !tof_far) {
+      tof_far_since = millis();
+      tof_far_recal_done = false;
+    }
     tof_far = far;
     tof_misses = 0;
+    tof_settling = TOF_SETTLE;
+    tof_recent = 0;
     Serial.printf("# tof %s\n", far ? "far: Medium 6x6" : "near: Short 4x8");
   }
   static void tof_start() {
@@ -121,20 +160,96 @@
     const uint16_t mm = tof.read();
     tof_status = tof.ranging_data.range_status;
     tof_valid = tof_status == VL53L1X::RangeValid;
+    if (tof_settling) {
+      tof_settling--;
+    } else if (tof_far) {
+      tof_recent = (tof_recent << 1) | (tof_valid ? 0 : 1);
+    }
     // Switch on valid readings; this one is still reported as is.
     if (tof_valid) {
       tof_misses = 0;
+      tof_last_mm = mm;
       if (!tof_far && mm > TOF_FAR_ABOVE_MM) tof_set_far(true);
       else if (tof_far && mm < TOF_NEAR_BELOW_MM) tof_set_far(false);
-    } else if (tof_far && ++tof_misses >= TOF_MISSES_TO_NEAR) {
-      tof_misses = 0;
-      tof_set_far(false);
+    }
+    // Far: a fresh calibration once the slide has settled, or when it's
+    // missing too often while still far out.
+    if (tof_far && !tof_settling && tof_last_mm >= TOF_NEAR_BELOW_MM &&
+        ((!tof_far_recal_done && millis() - tof_far_since >= TOF_FAR_RECAL_MS) ||
+         __builtin_popcount(tof_recent) >= TOF_FAR_RECAL_MISSES)) {
+      tof_far_recal_done = true;
+      tof_set_far(true);
+      return mm;
+    }
+    if (tof_valid || tof_settling) {
+      // a reading, or just switched: not a miss
+    } else if (++tof_misses >= (tof_far ? TOF_MISSES_TO_NEAR : TOF_MISSES_TO_FAR)) {
+      // Far and still far out: restart far (recalibrates). Otherwise swap.
+      tof_set_far(tof_far ? tof_last_mm >= TOF_NEAR_BELOW_MM : true);
     }
     return mm;
   }
   static bool tof_ok() {
     return tof_valid;
   }
+
+#ifdef SLIDEPOD_TOF_SWEEP
+  // Test build: hold the slide still and this cycles through far-range
+  // settings, ~5 s each, logging how each one reads. Not for release.
+  struct TofCfg { const char* name; VL53L1X::DistanceMode mode; uint32_t budgetUs; uint8_t w, h; uint16_t periodMs; };
+  static const TofCfg kSweep[] = {
+    {"A medium 6x6 33ms",  VL53L1X::Medium, 33000, 6, 6, 41},
+    {"B medium 8x8 33ms",  VL53L1X::Medium, 33000, 8, 8, 41},
+    {"C medium 16x16 33ms", VL53L1X::Medium, 33000, 16, 16, 41},
+    {"D long 6x6 50ms",    VL53L1X::Long, 50000, 6, 6, 58},
+    {"E long 8x8 50ms",    VL53L1X::Long, 50000, 8, 8, 58},
+    {"F long 16x16 50ms",  VL53L1X::Long, 50000, 16, 16, 58},
+    {"G medium 6x6 50ms",  VL53L1X::Medium, 50000, 6, 6, 58},
+    {"H long 16x16 100ms", VL53L1X::Long, 100000, 16, 16, 108},
+  };
+  static void tof_sweep() {
+    static int cfg = -1;
+    static uint32_t since = 0;
+    static uint16_t vals[200];
+    static int n = 0, total = 0;
+    static uint16_t codes[16];
+    auto report = [&]() {
+      if (cfg < 0 || !total) return;
+      // median and spread of the valid readings
+      for (int i = 1; i < n; i++) for (int j = i; j > 0 && vals[j-1] > vals[j]; j--) { uint16_t t = vals[j]; vals[j] = vals[j-1]; vals[j-1] = t; }
+      double mean = 0, var = 0;
+      for (int i = 0; i < n; i++) mean += vals[i];
+      if (n) mean /= n;
+      for (int i = 0; i < n; i++) var += (vals[i] - mean) * (vals[i] - mean);
+      Serial.printf("SWEEP %s | readings %d valid %d (%d%%) | median %u mm sd %.1f | p10 %u p90 %u | fails:",
+          kSweep[cfg].name, total, n, total ? 100 * n / total : 0,
+          n ? vals[n / 2] : 0, n ? sqrt(var / n) : 0.0, n ? vals[n / 10] : 0, n ? vals[n * 9 / 10] : 0);
+      for (int c = 0; c < 16; c++) if (codes[c] && c != VL53L1X::RangeValid) Serial.printf(" s%d×%u", c, codes[c]);
+      Serial.println();
+    };
+    if (cfg < 0 || millis() - since > 5000) {
+      report();
+      cfg = (cfg + 1) % (int)(sizeof kSweep / sizeof kSweep[0]);
+      if (cfg == 0) Serial.println("SWEEP ---- round ----");
+      const TofCfg& c = kSweep[cfg];
+      tof.stopContinuous();
+      tof.setDistanceMode(c.mode);
+      tof.setMeasurementTimingBudget(c.budgetUs);
+      tof.setROISize(c.w, c.h);
+      tof.setROICenter(TOF_ROI_CENTRE);
+      tof.startContinuous(c.periodMs);
+      since = millis(); n = 0; total = 0;
+      memset(codes, 0, sizeof codes);
+      // let the first readings settle
+      tof.read(); tof.read();
+    }
+    const uint16_t mm = tof.read();
+    const uint8_t st = tof.ranging_data.range_status;
+    total++;
+    if (st < 16) codes[st]++;
+    if (st == VL53L1X::RangeValid && n < 200) vals[n++] = mm;
+  }
+#endif
   static unsigned tof_status_code() { return tof_status; }
   static const char *tof_mode_name() { return tof_far ? "far" : "near"; }
 #endif
@@ -285,7 +400,7 @@ static volatile uint8_t g_ledR = 0, g_ledG = 0, g_ledB = 0;
 #define SLIDEPOD_OTA_DATA_UUID "d5e40008-7537-4463-a441-27f2d3140fab"
 
 // Firmware version, reported in the info characteristic.
-#define SLIDEPOD_FW "0.5.2"
+#define SLIDEPOD_FW "0.5.3"
 
 // Longest name, in UTF-8 bytes: fits the scan response (31 bytes) with room
 // to spare, and the app's lists.
@@ -946,6 +1061,11 @@ void setup() {
 }
 
 void loop() {
+#if defined(SLIDEPOD_TOF_SWEEP) && !defined(WOKWI_SIM)
+  ble_keep_fast();
+  tof_sweep();
+  return;
+#endif
 #ifdef WOKWI_SIM
   // BOOT button toggles between sweep and hold-at-closed.
   static bool prev_btn = LOW;
