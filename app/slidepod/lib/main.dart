@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'account.dart';
+import 'pod_sheet.dart';
 import 'calibration_screen.dart';
 import 'flash_card_screen.dart';
 import 'gliss_take.dart';
@@ -522,6 +522,7 @@ class _HomePageState extends State<HomePage> {
     });
     await _source.connectFirst();
     if (mounted) setState(() => _scanning = false);
+    await _connectedTo();
   }
 
   void _switchSource(bool useMock) {
@@ -582,18 +583,48 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  static const _lastPodKey = 'pod_last_serial';
+
+  /// Connected: the pod's sheet (rename, blink, link, disconnect).
+  Future<void> _openPodSheet() async {
+    final account = await _openAccount();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => PodSheet(
+        source: _source,
+        account: account,
+        onDisconnect: () => _source.disconnect(),
+      ),
+    );
+    if (mounted) setState(() => _status = _podStatus());
+  }
+
+  String _podStatus() =>
+      _source.pod?.name ?? (_source.isMock ? 'Mock connected' : 'Connected');
+
+  /// Just connected: remember the pod, and if it's linked to the account,
+  /// tell the server it was seen (with its name and firmware).
+  Future<void> _connectedTo() async {
+    final pod = _source.pod;
+    if (mounted) setState(() => _status = _podStatus());
+    if (pod == null || _source.isMock) return;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_lastPodKey, pod.serial);
+    final account = await _openAccount();
+    if (account.signedIn && account.pods.isEmpty) await account.loadPods();
+    await account.podSeen(pod);
+  }
+
   Future<void> _scanAndConnect() async {
-    if (_source.isMock) {
-      if (_connected) {
-        await _source.disconnect();
-      } else {
-        await _startMock();
-      }
+    if (_connected) {
+      await _openPodSheet();
       return;
     }
-
-    if (_connected) {
-      await (_source as SlidePodBle).disconnect();
+    if (_source.isMock) {
+      await _startMock();
       return;
     }
 
@@ -617,12 +648,21 @@ class _HomePageState extends State<HomePage> {
       if (results.length == 1) {
         setState(() => _status = 'Connecting...');
         await ble.connect(results.first.device);
+        await _connectedTo();
       } else {
+        _prefs ??= await SharedPreferences.getInstance();
+        final account = await _openAccount();
         if (!mounted) return;
-        final device = await _showDevicePicker(results);
+        final device = await showPodPicker(
+          context,
+          [for (final r in results) FoundPod.of(r)],
+          lastSerial: _prefs!.getString(_lastPodKey),
+          isMine: (serial) => account.linkedPod(serial) != null,
+        );
         if (device != null) {
           setState(() => _status = 'Connecting...');
           await ble.connect(device);
+          await _connectedTo();
         } else {
           setState(() => _status = 'Tap to connect');
         }
@@ -632,31 +672,6 @@ class _HomePageState extends State<HomePage> {
     } finally {
       if (mounted) setState(() => _scanning = false);
     }
-  }
-
-  Future<BluetoothDevice?> _showDevicePicker(List<ScanResult> results) {
-    return showModalBottomSheet<BluetoothDevice>(
-      context: context,
-      builder: (ctx) => ListView(
-        shrinkWrap: true,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text('Select SlidePod',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ),
-          for (final r in results)
-            ListTile(
-              title: Text(r.device.platformName.isNotEmpty
-                  ? r.device.platformName
-                  : 'SlidePod'),
-              subtitle: Text(r.device.remoteId.str),
-              trailing: Text('${r.rssi} dBm'),
-              onTap: () => Navigator.pop(ctx, r.device),
-            ),
-        ],
-      ),
-    );
   }
 
   /// Pitch to use: the pod's piezo (immune to room noise) when it hears

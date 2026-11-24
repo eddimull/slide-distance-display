@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+
+import 'pod_info.dart';
 
 class SlideData {
   /// Sent as raw_mm when the ToF has no valid reading this cycle (the slide
@@ -57,7 +60,30 @@ abstract class SlidePodSource {
   /// Holds the pod's LED at [rgb] (levels 0–255), or hands it back to the
   /// pod's own status colours when null. No-op if unsupported.
   Future<void> setLed((int, int, int)? rgb);
+
+  /// The connected pod: its serial, name and firmware. Null when not
+  /// connected, or on firmware before 0.3 (which can't say).
+  PodInfo? get pod;
+
+  /// Renames the connected pod (it advertises the new name from the next
+  /// disconnect). Throws [StateError] if the pod can't be renamed, and
+  /// [ArgumentError] for a name it won't take (see [podNameProblem]).
+  Future<void> rename(String name);
+
+  /// Flashes the pod's LED white a few times, to show which pod this is.
+  Future<void> blink();
   void dispose();
+}
+
+/// Flashes [setLed] white twice, then hands the LED back to the pod.
+Future<void> blinkLed(Future<void> Function((int, int, int)?) setLed) async {
+  for (var i = 0; i < 2; i++) {
+    await setLed((255, 255, 255));
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    await setLed((0, 0, 0));
+    await Future<void>.delayed(const Duration(milliseconds: 140));
+  }
+  await setLed(null);
 }
 
 // ── Mock source: triangle wave matching firmware sim ─────────────────────
@@ -82,6 +108,21 @@ class SlidePodMock implements SlidePodSource {
   bool get connected => _connected;
   @override
   bool get isMock => true;
+
+  PodInfo _pod = const PodInfo(
+      serial: '000000000000', name: 'Mock pod', firmware: 'mock', hardware: 0);
+  @override
+  PodInfo? get pod => _connected ? _pod : null;
+
+  @override
+  Future<void> rename(String name) async {
+    final problem = podNameProblem(name);
+    if (problem != null) throw ArgumentError(problem);
+    _pod = _pod.withName(name);
+  }
+
+  @override
+  Future<void> blink() async {}
 
   @override
   Future<void> connectFirst() async {
@@ -170,7 +211,27 @@ class SlidePodBle implements SlidePodSource {
   static final _svcUuid = Guid("d5e40001-7537-4463-a441-27f2d3140fab");
   static final _posUuid = Guid("d5e40002-7537-4463-a441-27f2d3140fab");
   static final _ledUuid = Guid("d5e40003-7537-4463-a441-27f2d3140fab");
+  static final _nameUuid = Guid("d5e40004-7537-4463-a441-27f2d3140fab");
+  static final _infoUuid = Guid("d5e40005-7537-4463-a441-27f2d3140fab");
   BluetoothCharacteristic? _ledChr; // absent on older firmware
+  BluetoothCharacteristic? _nameChr; // firmware 0.3 and up
+  PodInfo? _pod;
+
+  @override
+  PodInfo? get pod => _connected ? _pod : null;
+
+  /// The name a scanned pod advertises (older firmware: "SlidePod").
+  static String advertisedName(ScanResult r) {
+    final adv = r.advertisementData.advName;
+    if (adv.isNotEmpty) return adv;
+    final p = r.device.platformName;
+    return p.isNotEmpty ? p : 'SlidePod';
+  }
+
+  /// A scanned pod's serial, from its advert; null on older firmware and
+  /// on the web (the browser's chooser doesn't pass adverts on).
+  static String? advertisedSerial(ScanResult r) =>
+      serialFromAdvert(r.advertisementData.manufacturerData);
 
   BluetoothDevice? _device;
   StreamSubscription? _notifySub;
@@ -287,11 +348,20 @@ class SlidePodBle implements SlidePodSource {
     final services = await device.discoverServices();
 
     _ledChr = null;
+    _nameChr = null;
+    _pod = null;
     for (final svc in services) {
       if (svc.serviceUuid != _svcUuid) continue;
+      BluetoothCharacteristic? infoChr;
       for (final chr in svc.characteristics) {
         if (chr.characteristicUuid == _ledUuid) _ledChr = chr;
+        if (chr.characteristicUuid == _nameUuid) _nameChr = chr;
+        if (chr.characteristicUuid == _infoUuid) infoChr = chr;
       }
+      await _readIdentity(infoChr);
+      // Show which pod this is before the data (and the app's LED colours)
+      // starts.
+      await blink();
       for (final chr in svc.characteristics) {
         if (chr.characteristicUuid == _posUuid) {
           await chr.setNotifyValue(true);
@@ -303,6 +373,36 @@ class SlidePodBle implements SlidePodSource {
       }
     }
   }
+
+  Future<void> _readIdentity(BluetoothCharacteristic? infoChr) async {
+    final nameChr = _nameChr;
+    if (infoChr == null || nameChr == null) return;
+    try {
+      final name = utf8.decode(await nameChr.read(), allowMalformed: true);
+      _pod = PodInfo.fromInfo(await infoChr.read(), name);
+    } catch (_) {
+      _pod = null; // identity is extra; never fail the connection over it
+    }
+  }
+
+  @override
+  Future<void> rename(String name) async {
+    final chr = _nameChr;
+    final pod = _pod;
+    if (chr == null || pod == null || !_connected) {
+      throw StateError('This SlidePod needs newer firmware to be renamed.');
+    }
+    final problem = podNameProblem(name);
+    if (problem != null) throw ArgumentError(problem);
+    await chr.write(utf8.encode(name));
+    // The pod reads back its name: the old one if it refused the new one.
+    final now = utf8.decode(await chr.read(), allowMalformed: true);
+    if (now != name) throw ArgumentError('The SlidePod didn\'t take that name.');
+    _pod = pod.withName(now);
+  }
+
+  @override
+  Future<void> blink() => blinkLed(setLed);
 
   @override
   Future<void> setLed((int, int, int)? rgb) async {

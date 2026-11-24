@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'flash_card_game.dart';
+import 'pod_info.dart';
 import 'seventh_api.dart';
 
 /// The player's Seventh account, for the online leaderboards: signed in or
@@ -46,7 +49,9 @@ class Account extends ChangeNotifier {
       await _setPlayer(await api.me(t));
     } on ApiException catch (e) {
       if (e.signedOut) await _forget();
+      return;
     }
+    await loadPods();
   }
 
   Future<void> signInWithGoogle(String idToken) async =>
@@ -82,6 +87,78 @@ class Account extends ChangeNotifier {
     await _forget();
   }
 
+  List<LinkedPod> _pods = const [];
+
+  /// The player's linked SlidePods, as last loaded ([loadPods]).
+  List<LinkedPod> get pods => _pods;
+
+  /// The linked pod with [serial], if it's one of the player's.
+  LinkedPod? linkedPod(String serial) {
+    for (final p in _pods) {
+      if (p.serial == serial.toUpperCase()) return p;
+    }
+    return null;
+  }
+
+  Future<void> loadPods() async {
+    final t = _token;
+    if (t == null) return;
+    try {
+      _pods = await api.pods(t);
+      notifyListeners();
+    } on ApiException catch (e) {
+      if (e.signedOut) await _forget();
+    }
+  }
+
+  /// Links [pod] to the account. Throws [ApiException] (409: it's on
+  /// someone else's).
+  Future<LinkedPod> linkPod(PodInfo pod) async {
+    final linked = await _guard((t) => api.linkPod(t,
+        serial: pod.serial,
+        name: pod.name,
+        firmware: pod.firmware,
+        hardware: pod.hardware));
+    _pods = [for (final p in _pods) if (p.id != linked.id) p, linked];
+    notifyListeners();
+    return linked;
+  }
+
+  /// A linked pod just connected: tell the server its name and firmware
+  /// (and that it was seen). Quietly does nothing otherwise.
+  Future<void> podSeen(PodInfo pod) async {
+    if (!signedIn || linkedPod(pod.serial) == null) return;
+    try {
+      await linkPod(pod);
+    } on ApiException {
+      // Only bookkeeping.
+    }
+  }
+
+  Future<void> renamePod(LinkedPod pod, String name) async {
+    final renamed = await _guard((t) => api.renamePod(t, pod.id, name));
+    _pods = [for (final p in _pods) p.id == renamed.id ? renamed : p];
+    notifyListeners();
+  }
+
+  Future<void> unlinkPod(LinkedPod pod) async {
+    await _guard((t) => api.unlinkPod(t, pod.id));
+    _pods = [for (final p in _pods) if (p.id != pod.id) p];
+    notifyListeners();
+  }
+
+  /// Runs [call] with the token; signs out if the server says it's gone.
+  Future<T> _guard<T>(Future<T> Function(String token) call) async {
+    final t = _token;
+    if (t == null) throw const ApiException(401, 'Sign in first.');
+    try {
+      return await call(t);
+    } on ApiException catch (e) {
+      if (e.signedOut) await _forget();
+      rethrow;
+    }
+  }
+
   /// Posts a finished round for the leaderboards. Null when signed out or
   /// not offered here; throws [ApiException] if the server refused it.
   /// A game's online board; with [player]'s place when signed in.
@@ -109,6 +186,7 @@ class Account extends ChangeNotifier {
     _token = s.token;
     await prefs.setString(_tokenKey, s.token);
     await _setPlayer(s.player);
+    unawaited(loadPods());
   }
 
   Future<void> _setPlayer(Player p) async {
@@ -125,6 +203,7 @@ class Account extends ChangeNotifier {
   Future<void> _forget() async {
     _token = null;
     _player = null;
+    _pods = const [];
     await prefs.remove(_tokenKey);
     await prefs.remove(_idKey);
     await prefs.remove(_nameKey);
