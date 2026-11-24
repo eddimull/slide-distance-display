@@ -7,6 +7,7 @@ import 'gliss_take.dart';
 import 'position_colors.dart';
 import 'slide_calibration.dart';
 import 'trombone_chart.dart';
+import 'ui/seventh.dart';
 
 /// Guided slide calibration: instructions, three slow glissandos from 1st
 /// to 7th (2nd, 3rd and 4th partials), then a summary.
@@ -21,26 +22,30 @@ class CalibrationScreen extends StatefulWidget {
   /// plays it.
   final ValueChanged<int?>? onListeningFor;
 
+  /// The compact pod pill, rebuilt as the screen updates (null: none).
+  final WidgetBuilder? pod;
+
   const CalibrationScreen({
     super.key,
     required this.frames,
     this.onListeningFor,
+    this.pod,
   });
 
   @override
   State<CalibrationScreen> createState() => _CalibrationScreenState();
 }
 
-const _ground = Color(0xFF121316);
-const _card = Color(0xFF1B1D21);
-const _chip = Color(0xFF23262C);
-const _text = Color(0xFFECEDEF);
-const _muted = Color(0xFFA3A7AE);
-const _body = Color(0xFFB9BCC2);
-const _accent = Color(0xFF7FD6E3);
-const _onAccent = Color(0xFF0B2B31);
-const _good = Color(0xFF8FE3A0);
-const _warn = Color(0xFFFFB869);
+// The design system's colours, under this screen's old names.
+const _ground = Seventh.ground;
+const _card = Seventh.card;
+const _chip = Seventh.raised;
+const _text = Seventh.text;
+const _muted = Seventh.muted;
+const _body = Seventh.body;
+const _accent = Seventh.accent;
+const _good = Seventh.inTune;
+const _warn = Seventh.close;
 
 /// Start and end note of each gliss, 1st → 7th.
 String _glissNotes(int partial) {
@@ -119,6 +124,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         onRedo: () => _goTo(0),
       ),
       _ => _GlissPage(
+        pod: widget.pod?.call(context),
         index: _step,
         take: _take!,
         freq: _freq,
@@ -148,17 +154,8 @@ class _PrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 56,
     width: double.infinity,
-    child: FilledButton(
-      onPressed: onPressed,
-      style: FilledButton.styleFrom(
-        backgroundColor: _accent,
-        foregroundColor: _onAccent,
-        textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-      ),
-      child: Text(label),
-    ),
+    child: FilledButton(onPressed: onPressed, child: Text(label)),
   );
 }
 
@@ -167,15 +164,8 @@ class _SectionLabel extends StatelessWidget {
   const _SectionLabel(this.text);
 
   @override
-  Widget build(BuildContext context) => Text(
-    text.toUpperCase(),
-    style: const TextStyle(
-      fontSize: 12,
-      fontWeight: FontWeight.w600,
-      letterSpacing: 0.7,
-      color: _muted,
-    ),
-  );
+  Widget build(BuildContext context) =>
+      Text(text.toUpperCase(), style: Seventh.label);
 }
 
 class _Card extends StatelessWidget {
@@ -190,7 +180,7 @@ class _Card extends StatelessWidget {
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: color,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(Seventh.cardRadius),
       border: border == null ? null : Border.all(color: border!),
     ),
     child: child,
@@ -233,6 +223,7 @@ class _Intro extends StatelessWidget {
                 const Text(
                   'Calibrate your slide',
                   style: TextStyle(
+                    fontFamily: Seventh.titleFont,
                     fontSize: 30,
                     fontWeight: FontWeight.w700,
                     color: _text,
@@ -407,6 +398,7 @@ class _Step extends StatelessWidget {
 // ── 2 · Gliss ───────────────────────────────────────────────────────────
 
 class _GlissPage extends StatelessWidget {
+  final Widget? pod;
   final int index; // 1–3
   final GlissTake take;
   final double? freq;
@@ -414,6 +406,7 @@ class _GlissPage extends StatelessWidget {
   final VoidCallback? onSkip;
 
   const _GlissPage({
+    this.pod,
     required this.index,
     required this.take,
     required this.freq,
@@ -450,32 +443,37 @@ class _GlissPage extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Close, the steps, n/3, and the pod.
         Row(
           children: [
             IconButton(
               onPressed: onBack,
-              icon: const Icon(
-                Icons.arrow_back_ios_new,
-                color: _text,
-                size: 20,
-              ),
+              icon: const Icon(Icons.close, color: _text, size: 22),
               tooltip: 'Back to instructions',
-              padding: EdgeInsets.zero,
-              alignment: Alignment.centerLeft,
             ),
-            const Spacer(),
-            for (var i = 1; i <= total; i++)
-              Container(
-                width: 28,
-                height: 6,
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                decoration: BoxDecoration(
-                  color: i <= index ? _accent : const Color(0xFF33363D),
-                  borderRadius: BorderRadius.circular(3),
+            const SizedBox(width: 4),
+            for (var i = 1; i <= total; i++) ...[
+              if (i > 1) const SizedBox(width: 6),
+              Expanded(
+                child: Container(
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: i < index
+                        ? _accent
+                        : i == index
+                        ? _accent.withValues(alpha: 0.45)
+                        : Seventh.line,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                 ),
               ),
-            const Spacer(),
-            const SizedBox(width: 40),
+            ],
+            const SizedBox(width: 10),
+            Text(
+              '$index/$total',
+              style: Seventh.mono.copyWith(fontSize: 12, color: _muted),
+            ),
+            if (pod != null) ...[const SizedBox(width: 10), pod!],
           ],
         ),
         Expanded(
@@ -491,8 +489,10 @@ class _GlissPage extends StatelessWidget {
                 Text(
                   _glissNotes(n),
                   style: const TextStyle(
-                    fontSize: 44,
+                    fontFamily: Seventh.titleFont,
+                    fontSize: 40,
                     fontWeight: FontWeight.w700,
+                    letterSpacing: -0.8,
                     color: _text,
                     height: 1.05,
                   ),
@@ -522,6 +522,7 @@ class _GlissPage extends StatelessWidget {
                         Text(
                           hearing,
                           style: const TextStyle(
+                            fontFamily: Seventh.titleFont,
                             fontSize: 64,
                             fontWeight: FontWeight.w700,
                             color: _text,
@@ -588,19 +589,9 @@ class _GlissPage extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: SizedBox(
-                height: 52,
-                child: OutlinedButton(
-                  onPressed: onRestart,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _text,
-                    side: const BorderSide(color: Color(0xFF3A3E46)),
-                  ),
-                  child: const Text(
-                    'Restart this one',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ),
+              child: OutlinedButton(
+                onPressed: onRestart,
+                child: const Text('Restart this one'),
               ),
             ),
             if (onSkip != null) ...[
@@ -646,8 +637,8 @@ class _IssueCard extends StatelessWidget {
       ),
     };
     return _Card(
-      color: const Color(0xFF2A1F14),
-      border: const Color(0xFF5A3B1C),
+      color: Seventh.closeBg,
+      border: Color(0xFF5A4526),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -661,7 +652,7 @@ class _IssueCard extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 19,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFFFFD2A0),
+                    color: Seventh.close,
                   ),
                 ),
               ),
@@ -673,13 +664,13 @@ class _IssueCard extends StatelessWidget {
             style: const TextStyle(
               fontSize: 15,
               height: 1.5,
-              color: Color(0xFFE8D3BC),
+              color: Color(0xFFE0D3BF),
             ),
           ),
           const SizedBox(height: 10),
           const Text(
             'Play the start note again to retry.',
-            style: TextStyle(fontSize: 14, color: Color(0xFFE8D3BC)),
+            style: TextStyle(fontSize: 14, color: Color(0xFFE0D3BF)),
           ),
         ],
       ),
@@ -845,7 +836,7 @@ class _Done extends StatelessWidget {
                   width: 64,
                   height: 64,
                   decoration: const BoxDecoration(
-                    color: Color(0xFF1D3A26),
+                    color: Seventh.inTuneBg,
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.check, color: _good, size: 32),
@@ -890,7 +881,7 @@ class _Done extends StatelessWidget {
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w700,
                                     fontSize: 15,
-                                    color: Color(0xFF14151A),
+                                    color: Seventh.ground,
                                   ),
                                 ),
                               ),
@@ -931,7 +922,7 @@ class _Done extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(18),
                                   border: Border.all(
-                                    color: const Color(0xFF4A4E57),
+                                    color: Seventh.faint,
                                   ),
                                 ),
                                 child: Text(
