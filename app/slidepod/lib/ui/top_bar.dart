@@ -100,12 +100,13 @@ class PodPill extends StatelessWidget {
               charging: p.usb,
             ),
           );
+          // Charging: the bolt says so; the number is the pod's estimate.
           children.add(
             Text(
-              p.usb
-                  ? (compact ? '' : 'Charging')
+              p.usb && p.charged
+                  ? 'Charged'
                   : p.percent == null
-                  ? '–'
+                  ? (p.usb ? 'Charging' : '–')
                   : '${p.percent} %',
               style: Seventh.mono.copyWith(
                 fontSize: compact ? 11 : 12,
@@ -116,7 +117,7 @@ class PodPill extends StatelessWidget {
         }
         semantics = [
           '${name ?? 'SlidePod'} connected',
-          if (p != null) p.usb ? 'charging' : 'battery ${p.label}',
+          if (p != null) 'battery ${p.label}',
         ].join(', ');
     }
     final off = link == PodLink.off;
@@ -182,7 +183,7 @@ class BatteryGlyph extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CustomPaint(
     size: const Size(22, 12),
-    painter: _BatteryPainter(charging ? 100 : percent, color, charging),
+    painter: _BatteryPainter(percent, color, charging),
   );
 }
 
@@ -241,6 +242,15 @@ class _BatteryPainter extends CustomPainter {
         ..lineTo(c.dx + 2.5, c.dy - 0.5)
         ..lineTo(c.dx, c.dy - 0.5)
         ..close();
+      // Dark with an outline in [color]: it shows on the fill and on the
+      // empty part alike.
+      canvas.drawPath(
+          bolt,
+          Paint()
+            ..color = color
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.6
+            ..strokeJoin = StrokeJoin.round);
       canvas.drawPath(bolt, Paint()..color = Seventh.ground);
     }
   }
