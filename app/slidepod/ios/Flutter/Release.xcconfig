@@ -1,1 +1,4 @@
 #include "Generated.xcconfig"
+// App Store signing, written by CI (.github/workflows/mobile.yml); absent
+// locally, where Xcode's automatic signing applies.
+#include? "CI.xcconfig"

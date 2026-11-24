@@ -1,0 +1,243 @@
+name: Mobile apps
+
+# Builds the Android and iOS apps, and on main uploads them for testing:
+#  - Android: a signed app bundle to Google Play's internal testing track.
+#  - iOS: a signed build to TestFlight.
+# Going to production is by hand: run this workflow with "promote" to move
+# Play's latest internal release to production. On iOS, submit the TestFlight
+# build for review in App Store Connect.
+#
+# A push to main that also changes the firmware (src/, include/,
+# platformio.ini) still builds but doesn't upload: firmware goes out on its
+# own (beta, then promote; see firmware.yml), and the app follows once it's
+# out. Run this workflow by hand to upload such a build when it's time.
+#
+# Secrets (environment `production`):
+#   Android: ANDROID_UPLOAD_KEYSTORE (the .jks, base64),
+#            ANDROID_UPLOAD_KEYSTORE_PASSWORD, PLAY_SERVICE_ACCOUNT_JSON
+#   iOS:     APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the .p8's
+#            text), IOS_DIST_CERT_P12 (base64), IOS_DIST_CERT_PASSWORD
+# Variable PLAY_RELEASE_STATUS: `draft` (the default) until the app has been
+# published once in Play Console, which refuses anything else before then;
+# then `completed`.
+#
+# Build numbers are this workflow's run number + 100, so they only go up.
+
+on:
+  push:
+    branches: [main]
+    paths: ['app/slidepod/**', '.github/workflows/mobile.yml']
+  pull_request:
+    paths: ['app/slidepod/**', '.github/workflows/mobile.yml']
+  workflow_dispatch:
+    inputs:
+      promote:
+        description: "Promote Play's latest internal release to production (no build)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: 3.41.6
+
+jobs:
+  # Whether the builds go to the stores: on main, unless this push also
+  # changes the firmware; and always when run by hand.
+  plan:
+    if: ${{ !inputs.promote }}
+    runs-on: ubuntu-latest
+    outputs:
+      upload: ${{ steps.plan.outputs.upload }}
+      build_number: ${{ steps.plan.outputs.build_number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          echo "build_number=$((GITHUB_RUN_NUMBER + 100))" >> "$GITHUB_OUTPUT"
+          upload=false
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            upload=true
+          elif [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              range="$GITHUB_SHA~1..$GITHUB_SHA"
+            else
+              range="$BEFORE..$GITHUB_SHA"
+            fi
+            fw=$(git diff --name-only "$range" -- src include platformio.ini)
+            if [ -n "$fw" ]; then
+              echo "::notice::This push changes the firmware, so the apps aren't uploaded:"
+              echo "$fw"
+            else
+              upload=true
+            fi
+          fi
+          echo "upload=$upload" >> "$GITHUB_OUTPUT"
+          echo "Upload to the stores: $upload"
+
+  android:
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: ${{ needs.plan.outputs.upload == 'true' && 'production' || '' }}
+    defaults:
+      run:
+        working-directory: app/slidepod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Upload key
+        if: needs.plan.outputs.upload == 'true'
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE }}
+          PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE" ] || [ -z "$PASSWORD" ]; then
+            echo "::error::ANDROID_UPLOAD_KEYSTORE(_PASSWORD) isn't set."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyPassword=%s\nkeyAlias=upload\n' \
+            "$RUNNER_TEMP/upload.jks" "$PASSWORD" "$PASSWORD" > android/key.properties
+      - name: Build the app bundle
+        run: flutter build appbundle --release --build-number=${{ needs.plan.outputs.build_number }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-aab
+          path: app/slidepod/build/app/outputs/bundle/release/app-release.aab
+      - name: Upload to Play (internal testing)
+        if: needs.plan.outputs.upload == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: app.seventh
+          releaseFiles: app/slidepod/build/app/outputs/bundle/release/app-release.aab
+          track: internal
+          status: ${{ vars.PLAY_RELEASE_STATUS || 'draft' }}
+      - if: always()
+        run: rm -f android/key.properties "$RUNNER_TEMP/upload.jks"
+
+  ios:
+    needs: plan
+    runs-on: macos-15
+    environment: ${{ needs.plan.outputs.upload == 'true' && 'production' || '' }}
+    defaults:
+      run:
+        working-directory: app/slidepod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      # Pull requests: check it compiles, unsigned.
+      - name: Build (unsigned)
+        if: needs.plan.outputs.upload != 'true'
+        run: flutter build ios --release --no-codesign --build-number=${{ needs.plan.outputs.build_number }}
+      - name: Distribution certificate
+        if: needs.plan.outputs.upload == 'true'
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.IOS_DIST_CERT_P12 }}
+          p12-password: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+      - name: App Store provisioning profile
+        id: profile
+        if: needs.plan.outputs.upload == 'true'
+        uses: apple-actions/download-provisioning-profiles@v4
+        with:
+          bundle-id: app.seventh
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ secrets.ASC_ISSUER_ID }}
+          api-key-id: ${{ secrets.ASC_KEY_ID }}
+          api-private-key: ${{ secrets.ASC_KEY_P8 }}
+      - name: Signing settings
+        if: needs.plan.outputs.upload == 'true'
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          PROFILES: ${{ steps.profile.outputs.profiles }}
+        run: |
+          name=$(printf '%s' "$PROFILES" | jq -r '.[0].name')
+          if [ -z "$TEAM" ] || [ -z "$name" ] || [ "$name" = null ]; then
+            echo "::error::APPLE_TEAM_ID isn't set, or there's no App Store profile for app.seventh."
+            exit 1
+          fi
+          echo "Profile: $name"
+          cat > ios/Flutter/CI.xcconfig <<EOF
+          DEVELOPMENT_TEAM = $TEAM
+          CODE_SIGN_STYLE = Manual
+          CODE_SIGN_IDENTITY = Apple Distribution
+          CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER = $name
+          EOF
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict><key>app.seventh</key><string>$name</string></dict>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          EOF
+      - name: Build the IPA
+        id: ipa
+        if: needs.plan.outputs.upload == 'true'
+        run: |
+          flutter build ipa --release --build-number=${{ needs.plan.outputs.build_number }} \
+            --export-options-plist="$RUNNER_TEMP/ExportOptions.plist"
+          ipa=$(ls build/ios/ipa/*.ipa | head -1)
+          echo "Built $ipa"
+          echo "path=app/slidepod/$ipa" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: needs.plan.outputs.upload == 'true'
+        with:
+          name: ios-ipa
+          path: ${{ steps.ipa.outputs.path }}
+      - name: Upload to TestFlight
+        if: needs.plan.outputs.upload == 'true'
+        uses: apple-actions/upload-testflight-build@v3
+        with:
+          app-path: ${{ steps.ipa.outputs.path }}
+          issuer-id: ${{ secrets.ASC_ISSUER_ID }}
+          api-key-id: ${{ secrets.ASC_KEY_ID }}
+          api-private-key: ${{ secrets.ASC_KEY_P8 }}
+
+  # Run by hand: Play's latest internal release goes to production.
+  promote:
+    if: ${{ inputs.promote }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: gem install fastlane --no-document
+      - name: internal → production
+        env:
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          fastlane run upload_to_play_store package_name:app.seventh \
+            json_key_data:"$PLAY_JSON" track:internal track_promote_to:production \
+            skip_upload_aab:true skip_upload_apk:true skip_upload_metadata:true \
+            skip_upload_changelogs:true skip_upload_images:true skip_upload_screenshots:true
