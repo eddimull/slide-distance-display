@@ -9,7 +9,10 @@
  * Serial CSV output mirrors the BLE payload for debugging.
  *
  * BLE service: GATT notify, 8-byte payload (raw_mm + filt_mm + pos + pitch).
- * Advertises as "SlidePod". Connect with any BLE central (phone/laptop).
+ * Each pod has a serial (its chip's factory MAC, 12 hex digits) and a name,
+ * "SlidePod" plus the serial's last 4 digits until the app renames it. It
+ * advertises the name, the service and the serial (manufacturer data), so
+ * the app can tell pods apart before connecting. See ble_init().
  *
  * Build targets:
  *   pio run -e slidepod-sim   Wokwi simulation (mock ToF, no BLE)
@@ -272,6 +275,63 @@ static volatile uint8_t g_ledR = 0, g_ledG = 0, g_ledB = 0;
 #define SLIDEPOD_SVC_UUID  "d5e40001-7537-4463-a441-27f2d3140fab"
 #define SLIDEPOD_POS_UUID  "d5e40002-7537-4463-a441-27f2d3140fab"
 #define SLIDEPOD_LED_UUID  "d5e40003-7537-4463-a441-27f2d3140fab"
+#define SLIDEPOD_NAME_UUID "d5e40004-7537-4463-a441-27f2d3140fab"
+#define SLIDEPOD_INFO_UUID "d5e40005-7537-4463-a441-27f2d3140fab"
+
+// Firmware version, reported in the info characteristic.
+#define SLIDEPOD_FW "0.3.0"
+
+// Longest name, in UTF-8 bytes: fits the scan response (31 bytes) with room
+// to spare, and the app's lists.
+static constexpr size_t POD_NAME_MAX = 20;
+
+#include <Preferences.h>
+
+static char g_serial[13];          // e.g. "7CDFA1E23F2A"
+static std::string g_name;          // what the pod advertises
+
+// The chip's factory (base) MAC, as 12 hex digits. The BLE address is
+// derived from it, but the base MAC is what's printed for the chip and
+// doesn't change if the BLE address type does.
+static void load_serial() {
+  const uint64_t mac = ESP.getEfuseMac();  // byte 0 of the MAC is the low byte
+  snprintf(g_serial, sizeof g_serial, "%02X%02X%02X%02X%02X%02X",
+           (unsigned)(mac & 0xFF), (unsigned)((mac >> 8) & 0xFF),
+           (unsigned)((mac >> 16) & 0xFF), (unsigned)((mac >> 24) & 0xFF),
+           (unsigned)((mac >> 32) & 0xFF), (unsigned)((mac >> 40) & 0xFF));
+}
+
+static std::string default_name() {
+  return std::string("SlidePod ") + (g_serial + 8);
+}
+
+// A name is 1–POD_NAME_MAX bytes of valid UTF-8 with no control characters,
+// and not just spaces.
+static bool valid_name(const std::string& n) {
+  if (n.empty() || n.size() > POD_NAME_MAX) return false;
+  bool visible = false;
+  for (size_t i = 0; i < n.size();) {
+    const uint8_t c = n[i];
+    size_t len = c < 0x80 ? 1 : (c >> 5) == 0x6 ? 2 : (c >> 4) == 0xE ? 3
+               : (c >> 3) == 0x1E ? 4 : 0;
+    if (!len || i + len > n.size()) return false;
+    for (size_t k = 1; k < len; k++)
+      if ((uint8_t(n[i + k]) >> 6) != 0x2) return false;
+    if (len == 1 && (c < 0x20 || c == 0x7F)) return false;
+    if (c != ' ') visible = true;
+    i += len;
+  }
+  return visible;
+}
+
+static void load_name() {
+  Preferences prefs;
+  prefs.begin("slidepod", true);
+  const String saved = prefs.getString("name", "");
+  prefs.end();
+  g_name = saved.length() ? std::string(saved.c_str()) : default_name();
+  if (!valid_name(g_name)) g_name = default_name();
+}
 
 static NimBLECharacteristic* posChr = nullptr;
 
@@ -290,6 +350,32 @@ class LedWrite : public NimBLECharacteristicCallbacks {
   }
 };
 static LedWrite ledWriteCb;
+
+// The pod's name. Write 1–20 bytes of UTF-8 to rename it, or nothing (an
+// empty write) to go back to the default. Saved in flash; advertised from
+// the next disconnect (the pod doesn't advertise while connected).
+class NameWrite : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c) override {
+    std::string v = c->getValue();
+    if (v.empty()) {
+      v = default_name();
+    } else if (!valid_name(v)) {
+      c->setValue(g_name);  // refuse: keep reading back the current name
+      return;
+    }
+    Preferences prefs;
+    prefs.begin("slidepod", false);
+    if (v == default_name()) prefs.remove("name");
+    else prefs.putString("name", v.c_str());
+    prefs.end();
+    g_name = v;
+    c->setValue(g_name);
+    NimBLEDevice::setDeviceName(g_name);  // the GAP name, read after connecting
+    NimBLEDevice::getAdvertising()->setName(g_name);
+    Serial.printf("# renamed: %s\n", g_name.c_str());
+  }
+};
+static NameWrite nameWriteCb;
 
 // Debug: log raw GAP connect/disconnect events (status / reason codes).
 static int gap_log(struct ble_gap_event* ev, void*) {
@@ -352,7 +438,9 @@ static void ble_keep_fast() {
 }
 
 static void ble_init() {
-  NimBLEDevice::init("SlidePod");
+  load_serial();
+  load_name();
+  NimBLEDevice::init(g_name);
   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
   NimBLEDevice::setCustomGapHandler(gap_log);
 
@@ -369,12 +457,36 @@ static void ble_init() {
     SLIDEPOD_LED_UUID,
     NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
   )->setCallbacks(&ledWriteCb);
+  auto* nameChr = svc->createCharacteristic(
+    SLIDEPOD_NAME_UUID,
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE
+  );
+  nameChr->setValue(g_name);
+  nameChr->setCallbacks(&nameWriteCb);
+  // Who this pod is, as JSON. A custom characteristic rather than Device
+  // Information's serial number, which Web Bluetooth blocks.
+  char info[96];
+  snprintf(info, sizeof info, "{\"serial\":\"%s\",\"fw\":\"%s\",\"hw\":%d}",
+           g_serial, SLIDEPOD_FW, SLIDEPOD_REV);
+  svc->createCharacteristic(SLIDEPOD_INFO_UUID, NIMBLE_PROPERTY::READ)
+     ->setValue(std::string(info));
   svc->start();
 
+  // Advertisement (31 bytes): flags (3) + the service UUID (18) + the serial
+  // as manufacturer data (10: company 0xFFFF, the "no company" test ID, then
+  // the 6 MAC bytes). The name doesn't fit, so NimBLE puts it in the scan
+  // response.
+  uint8_t mfg[8] = {0xFF, 0xFF};
+  const uint64_t mac = ESP.getEfuseMac();
+  for (int i = 0; i < 6; i++) mfg[2 + i] = (mac >> (8 * i)) & 0xFF;
   auto* adv = NimBLEDevice::getAdvertising();
   adv->addServiceUUID(SLIDEPOD_SVC_UUID);
+  adv->setManufacturerData(std::string((const char*)mfg, sizeof mfg));
   adv->setScanResponse(true);
+  adv->setName(g_name);
   adv->start();
+  Serial.printf("# %s, serial %s, firmware %s\n", g_name.c_str(), g_serial,
+                SLIDEPOD_FW);
 }
 
 // 8-byte LE payload: raw_mm(u16) + filt_mm(u16) + position(u16, 0–10000)

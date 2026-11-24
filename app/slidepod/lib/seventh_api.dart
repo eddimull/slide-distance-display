@@ -17,6 +17,7 @@ class ApiException implements Exception {
   bool get signedOut => status == 401;
 
   /// 409: the scoring changed; this version of the app can't post scores.
+  /// (Linking a pod: it's on another account.)
   bool get outdated => status == 409;
 
   @override
@@ -88,6 +89,21 @@ class Board {
   final List<BoardEntry> entries;
   final Standing? me;
   const Board(this.players, this.entries, this.me);
+}
+
+/// A SlidePod linked to the player's account.
+class LinkedPod {
+  final int id;
+  final String serial;
+  final String? name, firmware;
+  const LinkedPod(this.id, this.serial, this.name, this.firmware);
+
+  static LinkedPod fromJson(Map<String, dynamic> m) => LinkedPod(
+        (m['id'] as num).toInt(),
+        m['serial'] as String,
+        m['name'] as String?,
+        m['firmware'] as String?,
+      );
 }
 
 class SeventhApi {
@@ -163,6 +179,34 @@ class SeventhApi {
       Standing.fromJson(m['me']),
     );
   }
+
+  Future<List<LinkedPod>> pods(String token) async => [
+        for (final p in ((await _send('GET', '/pods', token: token))['pods']
+                as List? ??
+            const []))
+          LinkedPod.fromJson(p as Map<String, dynamic>)
+      ];
+
+  /// Links the pod (or refreshes it, if it's already this player's).
+  /// Throws [ApiException] 409 if it's on another account.
+  Future<LinkedPod> linkPod(String token,
+          {required String serial,
+          String? name,
+          String? firmware,
+          int? hardware}) async =>
+      LinkedPod.fromJson((await _send('POST', '/pods', token: token, body: {
+        'serial': serial,
+        'name': ?name,
+        'firmware': ?firmware,
+        'hardware': ?hardware,
+      }))['pod'] as Map<String, dynamic>);
+
+  Future<LinkedPod> renamePod(String token, int id, String name) async =>
+      LinkedPod.fromJson((await _send('PATCH', '/pods/$id',
+          token: token, body: {'name': name}))['pod'] as Map<String, dynamic>);
+
+  Future<void> unlinkPod(String token, int id) =>
+      _send('DELETE', '/pods/$id', token: token);
 
   Future<Map<String, dynamic>> _send(String method, String path,
       {String? token, Map<String, Object?>? body}) async {
