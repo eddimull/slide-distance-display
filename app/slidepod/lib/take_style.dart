@@ -3,36 +3,35 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'position_colors.dart';
+import 'ui/seventh.dart';
 import 'take_analysis.dart';
 import 'trombone_chart.dart';
 
 /// Colours and formatting shared by the Takes, Recording and Review
-/// screens (the "Record & Analyze" design).
+/// screens; now the design system's ([Seventh]) under their old names.
 class TakeStyle {
-  static const ground = Color(0xFF0F1115);
-  static const card = Color(0xFF181B21);
-  static const chip = Color(0xFF22262E);
-  static const line = Color(0xFF2C313A);
-  static const text = Color(0xFFE8EAED);
-  static const body = Color(0xFFC4C7CC);
-  static const muted = Color(0xFF9AA0A6);
-  static const accent = Color(0xFF64B5F6);
-  static const onAccent = Color(0xFF0F1115);
-  static const record = Color(0xFFEF5350);
+  static const ground = Seventh.ground;
+  static const card = Seventh.card;
+  static const chip = Seventh.raised;
+  static const line = Seventh.line;
+  static const text = Seventh.text;
+  static const body = Seventh.body;
+  static const muted = Seventh.muted;
+  static const accent = Seventh.accent;
+  static const onAccent = Seventh.onAccent;
+  static const record = Seventh.record;
 
-  static const good = Color(0xFF66BB6A);
-  static const warn = Color(0xFFFFB74D);
-  static const bad = Color(0xFFEF5350);
+  // The design's one set of tuning colours.
+  static const good = Seventh.inTune;
+  static const warn = Seventh.close;
+  static const bad = Seventh.off;
 
   /// Overshoot and stopped-short markers: told apart by lightness and
   /// shape (▲ / ▼) as well as hue.
   static const over = Color(0xFFFFB74D);
   static const short = Color(0xFF8C9EFF);
 
-  static const mono = TextStyle(
-    fontFamily: 'monospace',
-    fontFeatures: [FontFeature.tabularFigures()],
-  );
+  static const mono = Seventh.mono;
 
   static const sectionLabel = TextStyle(
     fontSize: 12,
@@ -41,14 +40,7 @@ class TakeStyle {
     color: muted,
   );
 
-  static Color centsColor(double c) {
-    final a = c.abs();
-    return a < 10
-        ? good
-        : a < 25
-            ? warn
-            : bad;
-  }
+  static Color centsColor(double c) => Seventh.cents(c);
 
   /// Colour of chart position [p] (1–7).
   static Color position(int p) => PositionColors.screen[(p - 1).clamp(0, 6)];

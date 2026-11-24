@@ -85,6 +85,23 @@ flutter:
   # "family" key with the font family name, and a "fonts" key with a
   # list giving the asset and other descriptors for the font. For
   # example:
+  # The Seventh type: variable fonts (fontWeight drives the weight axis).
+  # SIL Open Font License; the licences are registered in main().
+  fonts:
+    - family: Space Grotesk
+      fonts:
+        - asset: fonts/SpaceGrotesk.ttf
+    - family: Inter
+      fonts:
+        - asset: fonts/Inter.ttf
+    - family: JetBrains Mono
+      fonts:
+        - asset: fonts/JetBrainsMono.ttf
+  assets:
+    - fonts/OFL-SpaceGrotesk.txt
+    - fonts/OFL-Inter.txt
+    - fonts/OFL-JetBrainsMono.txt
+
   # fonts:
   #   - family: Schyler
   #     fonts:

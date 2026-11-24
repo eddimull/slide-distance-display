@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'account.dart';
+import 'account_screen.dart';
 import 'pod_sheet.dart';
 import 'calibration_screen.dart';
 import 'flash_card_screen.dart';
@@ -22,8 +24,21 @@ import 'take_store.dart';
 import 'takes_screen.dart';
 import 'trombone_chart.dart';
 import 'upper_partials.dart';
+import 'ui/seventh.dart';
+import 'ui/top_bar.dart';
 
-void main() => runApp(const SlidePodApp());
+void main() {
+  LicenseRegistry.addLicense(() async* {
+    for (final (font, file) in [
+      ('Space Grotesk', 'fonts/OFL-SpaceGrotesk.txt'),
+      ('Inter', 'fonts/OFL-Inter.txt'),
+      ('JetBrains Mono', 'fonts/OFL-JetBrainsMono.txt'),
+    ]) {
+      yield LicenseEntryWithLineBreaks([font], await rootBundle.loadString(file));
+    }
+  });
+  runApp(const SlidePodApp());
+}
 
 class SlidePodApp extends StatelessWidget {
   const SlidePodApp({super.key});
@@ -31,12 +46,8 @@ class SlidePodApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SlidePod',
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF1565C0),
-        brightness: Brightness.dark,
-        useMaterial3: true,
-      ),
+      title: 'Seventh',
+      theme: Seventh.theme(),
       home: const HomePage(),
     );
   }
@@ -157,6 +168,9 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _openAccount().then((a) {
+      if (mounted) setState(() => _acct = a);
+    });
     _listen();
     _loadCal();
     SharedPreferences.getInstance().then((p) {
@@ -446,6 +460,7 @@ class _HomePageState extends State<HomePage> {
             );
           }
           return TakesScreen(
+            topBar: _topBar('Takes'),
             store: store,
             cal: _cal,
             canRecord: _connected,
@@ -463,6 +478,7 @@ class _HomePageState extends State<HomePage> {
         builder: (context, snap) => snap.data == null
             ? const Center(child: CircularProgressIndicator())
             : LearnScreen(
+                topBar: _topBar('Learn'),
                 learn: LearnContext(
                     frames: _frames.stream,
                     cal: _cal,
@@ -588,6 +604,44 @@ class _HomePageState extends State<HomePage> {
 
   static const _lastPodKey = 'pod_last_serial';
 
+  /// Connection problems, wherever you are (Live also shows them in place).
+  void _notice(String msg) {
+    if (!mounted || _tab == 0) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// The account, once opened (for the profile avatar).
+  Account? _acct;
+
+  PodLink get _podLink => _connected
+      ? PodLink.on
+      : _scanning
+          ? PodLink.connecting
+          : PodLink.off;
+
+  /// The pod pill: tap to connect, or (connected) the pod sheet.
+  Widget _podPill({bool compact = false}) => PodPill(
+        link: _podLink,
+        name: _source.pod?.name ?? (_source.isMock ? 'Mock pod' : null),
+        power: _source.power,
+        compact: compact,
+        onTap: _scanning ? null : _scanAndConnect,
+      );
+
+  Widget _profile() => ProfileAvatar(
+        account: _acct,
+        onTap: () {
+          final a = _acct;
+          if (a == null) return;
+          Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => AccountScreen(account: a)));
+        },
+      );
+
+  /// The top bar of each tab.
+  PreferredSizeWidget _topBar(String title) =>
+      SeventhTopBar(title: title, pod: _podPill(), profile: _profile());
+
   /// Connected: the pod's sheet (rename, blink, link, disconnect).
   Future<void> _openPodSheet() async {
     final account = await _openAccount();
@@ -649,6 +703,7 @@ class _HomePageState extends State<HomePage> {
           _scanning = false;
           _status = 'No SlidePod found';
         });
+        _notice('No SlidePod found. Is it switched on?');
         return;
       }
 
@@ -676,6 +731,7 @@ class _HomePageState extends State<HomePage> {
       }
     } catch (e) {
       setState(() => _status = 'Error: $e');
+      _notice('Couldn\'t connect: $e');
     } finally {
       if (mounted) setState(() => _scanning = false);
     }
@@ -721,70 +777,43 @@ class _HomePageState extends State<HomePage> {
     final live = SafeArea(
         child: Column(
           children: [
-            // ── Header ──
+            // ── Top bar, then the view switch ──
+            _topBar('Live'),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              padding: const EdgeInsets.fromLTRB(
+                  Seventh.gutter, 8, Seventh.gutter, 0),
               child: Row(
                 children: [
-                  GestureDetector(
-                    onTap: _scanning ? null : _scanAndConnect,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _connected
-                              ? Icons.bluetooth_connected
-                              : Icons.bluetooth,
-                          size: 18,
-                          color: _connected ? Colors.blue : Colors.grey,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(_status,
-                            style: Theme.of(context).textTheme.bodySmall),
-                        if (_scanning) ...[
-                          const SizedBox(width: 6),
-                          const SizedBox(
-                            width: 12,
-                            height: 12,
-                            child: CircularProgressIndicator(strokeWidth: 1.5),
-                          ),
-                        ],
+                  Expanded(
+                    child: SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(value: true, label: Text('Simple')),
+                        ButtonSegment(value: false, label: Text('Detail')),
                       ],
-                    ),
-                  ),
-                  const Spacer(),
-                  SegmentedButton<bool>(
-                    segments: const [
-                      ButtonSegment(value: true, label: Text('Easy')),
-                      ButtonSegment(value: false, label: Text('Full')),
-                    ],
-                    selected: {_easy},
-                    showSelectedIcon: false,
-                    onSelectionChanged: (s) => _setEasy(s.first),
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      selected: {_easy},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (s) => _setEasy(s.first),
+                      // The design's 36 px switch, not a 48 px button row.
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity(vertical: -3),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                     ),
                   ),
                   if (kDebugMode) ...[
                     const SizedBox(width: 8),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('BLE',
-                            style: TextStyle(
-                                fontSize: 10, color: Colors.grey.shade600)),
-                        SizedBox(
-                          height: 28,
-                          child: Switch(
+                    Tooltip(
+                      message: 'Debug: simulated pod',
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Mock', style: Seventh.small),
+                          Switch(
                             value: _source.isMock,
                             onChanged: (v) => _switchSource(v),
                           ),
-                        ),
-                        Text('Mock',
-                            style: TextStyle(
-                                fontSize: 10, color: Colors.grey.shade600)),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ],
@@ -797,11 +826,13 @@ class _HomePageState extends State<HomePage> {
                   style: const TextStyle(
                       fontSize: 80, fontWeight: FontWeight.w200, height: 1)),
               const SizedBox(height: 2),
-              Text('Not connected',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Colors.grey)),
+              Text(
+                  switch (_status) {
+                    'Tap to connect' || 'Disconnected' => 'Not connected',
+                    final s => s,
+                  },
+                  textAlign: TextAlign.center,
+                  style: Seventh.small),
               const Spacer(),
             ],
 
@@ -1236,8 +1267,10 @@ class _EasyView extends StatelessWidget {
           const Spacer(),
           Text('Position',
               style: TextStyle(fontSize: 16, color: Colors.grey.shade500)),
-          SizedBox(
-            height: 150,
+          // Up to 150 tall; smaller when the screen is short.
+          Flexible(
+            child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 150),
             child: FittedBox(
               child: Text(
                 slideNum == null ? '-' : _ordinals[slideNum! - 1],
@@ -1251,6 +1284,7 @@ class _EasyView extends StatelessWidget {
                 ),
               ),
             ),
+          ),
           ),
           const SizedBox(height: 16),
           _SlideBar(
