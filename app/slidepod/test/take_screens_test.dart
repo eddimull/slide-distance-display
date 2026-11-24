@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:slidepod/take_analysis.dart';
+import 'package:slidepod/take_timeline.dart';
 import 'package:slidepod/gliss_take.dart';
 import 'package:slidepod/record_screen.dart';
 import 'package:slidepod/review_screen.dart';
@@ -186,5 +188,48 @@ void main() {
         home: ReviewScreen(take: synthScaleTake(), cal: cal)));
     await tester.pump();
     expect(find.byTooltip('Record another take'), findsNothing);
+  });
+
+  testWidgets('review: pinch zooms the timeline, tap still seeks', (tester) async {
+    await tall(tester);
+    int? seekedTo;
+    final a = TakeAnalysis.analyze(synthScaleTake(), cal);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 360,
+          child: TakeTimeline(analysis: a, playheadMs: 0, onSeek: (ms) => seekedTo = ms),
+        ),
+      ),
+    ));
+    expect(find.byIcon(Icons.zoom_out_map), findsNothing);
+
+    // Two fingers spreading apart: zoom in.
+    final centre = tester.getCenter(find.byType(TakeTimeline));
+    final f1 = await tester.startGesture(centre - const Offset(20, 0), pointer: 1);
+    final f2 = await tester.startGesture(centre + const Offset(20, 0), pointer: 2);
+    for (var i = 1; i <= 10; i++) {
+      await f1.moveTo(centre - Offset(20.0 + 10 * i, 0));
+      await f2.moveTo(centre + Offset(20.0 + 10 * i, 0));
+      await tester.pump();
+    }
+    await f1.up();
+    await f2.up();
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.zoom_out_map), findsOneWidget);
+    final paint = tester.widget<CustomPaint>(find.descendant(
+        of: find.byType(TakeTimeline), matching: find.byType(CustomPaint)).first);
+    expect(paint.size.width, greaterThan(360 * 2));
+
+    // A tap still seeks, to the moment under it at this zoom.
+    await tester.tapAt(centre);
+    await tester.pump();
+    expect(seekedTo, isNotNull);
+    expect(seekedTo, inInclusiveRange(1, a.take.durationMs - 1));
+
+    // The reset shows the whole take again.
+    await tester.tap(find.byIcon(Icons.zoom_out_map));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.zoom_out_map), findsNothing);
   });
 }

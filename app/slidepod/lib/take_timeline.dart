@@ -7,8 +7,9 @@ import 'take_style.dart';
 
 /// The take on one time axis: where the slide was (against this horn's
 /// target for each note, with ▲ overshoots and ▼ short stops), how fast it
-/// moved, and how far each note was from in tune. Tap to seek. Takes longer
-/// than fits scroll sideways and follow the playhead.
+/// moved, and how far each note was from in tune. Tap to seek; pinch to
+/// zoom the time axis, drag to pan. Takes longer than fits scroll sideways
+/// and follow the playhead.
 class TakeTimeline extends StatefulWidget {
   final TakeAnalysis analysis;
   final int playheadMs;
@@ -38,6 +39,29 @@ class _TakeTimelineState extends State<TakeTimeline> {
   final _scroll = ScrollController();
   double _width = 0, _view = 0;
 
+  /// Pinch zoom on the time axis: 1 = the whole take (or
+  /// [TakeTimeline.minPxPerSecond]), up to [_maxPxPerSecond].
+  double _zoom = 1;
+  static const _maxPxPerSecond = 600.0;
+
+  // The pinch in progress: the zoom it started at, and the moment of the
+  // take under the fingers, which stays under them.
+  double _startZoom = 1;
+  double _focalMs = 0;
+
+  int get _dur => math.max(1, widget.analysis.take.durationMs);
+
+  /// Width of the axis at zoom 1.
+  double _baseWidth(double view) =>
+      math.max(view, _dur / 1000 * TakeTimeline.minPxPerSecond);
+
+  double _maxZoom(double view) {
+    final base = _baseWidth(view);
+    final pxPerSec = (base - _TimelinePainter.gutter - _TimelinePainter.right) /
+        (_dur / 1000);
+    return math.max(1, _maxPxPerSecond / pxPerSec);
+  }
+
   @override
   void didUpdateWidget(TakeTimeline old) {
     super.didUpdateWidget(old);
@@ -46,12 +70,49 @@ class _TakeTimelineState extends State<TakeTimeline> {
 
   void _follow() {
     if (!_scroll.hasClients || _width <= _view) return;
-    final x = _TimelinePainter.xFor(
-        widget.playheadMs, widget.analysis.take.durationMs, _width);
+    final x = _TimelinePainter.xFor(widget.playheadMs, _dur, _width);
     final off = _scroll.offset;
     if (x < off + 24 || x > off + _view - 24) {
       _scroll.jumpTo((x - _view * 0.3).clamp(0.0, _width - _view));
     }
+  }
+
+  double get _offset => _scroll.hasClients ? _scroll.offset : 0;
+
+  void _jump(double offset) {
+    if (_scroll.hasClients) {
+      _scroll.jumpTo(offset.clamp(0.0, math.max(0.0, _width - _view)));
+    }
+  }
+
+  void _onScaleStart(ScaleStartDetails d) {
+    _startZoom = _zoom;
+    _focalMs = _TimelinePainter.timeFor(d.localFocalPoint.dx + _offset, _dur, _width)
+        .toDouble();
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    if (d.pointerCount >= 2) {
+      // Zoom about the fingers: the moment under them stays put.
+      final zoom = (_startZoom * d.horizontalScale).clamp(1.0, _maxZoom(_view));
+      setState(() {
+        _zoom = zoom;
+        _width = _baseWidth(_view) * _zoom;
+      });
+      final x = _TimelinePainter.xFor(_focalMs.round(), _dur, _width);
+      WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _jump(x - d.localFocalPoint.dx));
+    } else {
+      _jump(_offset - d.focalPointDelta.dx);
+    }
+  }
+
+  void _resetZoom() {
+    setState(() {
+      _zoom = 1;
+      _width = _baseWidth(_view);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _follow());
   }
 
   @override
@@ -63,19 +124,20 @@ class _TakeTimelineState extends State<TakeTimeline> {
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, box) {
-      final dur = math.max(1, widget.analysis.take.durationMs);
       _view = box.maxWidth;
-      _width = math.max(_view, dur / 1000 * TakeTimeline.minPxPerSecond);
-      return SingleChildScrollView(
-        controller: _scroll,
-        scrollDirection: Axis.horizontal,
-        physics: _width > _view
-            ? const ClampingScrollPhysics()
-            : const NeverScrollableScrollPhysics(),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (d) => widget.onSeek(
-              _TimelinePainter.timeFor(d.localPosition.dx, dur, _width)),
+      _width = _baseWidth(_view) * _zoom;
+      final timeline = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // Viewport coordinates: the axis scrolls under the gesture.
+        onTapUp: (d) => widget.onSeek(
+            _TimelinePainter.timeFor(d.localPosition.dx + _offset, _dur, _width)),
+        onScaleStart: _onScaleStart,
+        onScaleUpdate: _onScaleUpdate,
+        child: SingleChildScrollView(
+          controller: _scroll,
+          scrollDirection: Axis.horizontal,
+          // Panning and zooming are the gesture detector's.
+          physics: const NeverScrollableScrollPhysics(),
           child: CustomPaint(
             size: Size(_width, TakeTimeline.height),
             painter: _TimelinePainter(
@@ -86,6 +148,37 @@ class _TakeTimelineState extends State<TakeTimeline> {
             ),
           ),
         ),
+      );
+      return Stack(
+        children: [
+          timeline,
+          if (_zoom > 1.01)
+            Positioned(
+              right: 4,
+              top: 4,
+              child: Material(
+                color: TakeStyle.chip,
+                borderRadius: BorderRadius.circular(8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: _resetZoom,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.zoom_out_map, size: 14, color: TakeStyle.body,
+                            semanticLabel: 'Show the whole take'),
+                        const SizedBox(width: 4),
+                        Text('${_zoom.toStringAsFixed(_zoom < 10 ? 1 : 0)}×',
+                            style: TakeStyle.mono.copyWith(fontSize: 11, color: TakeStyle.body)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       );
     });
   }
