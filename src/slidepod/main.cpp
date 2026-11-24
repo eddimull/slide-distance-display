@@ -183,6 +183,9 @@ static constexpr uint16_t TOF_NO_READING = 0xFFFF;
   #endif
   static constexpr int PIN_BOOT      = 0;
   // PIEZO_ADC is GPIO1 = ADC1_CH0 (hard-wired in the DMA config below).
+  // Same on rev 0.1 and 0.2 (module pins 6 and 14, hardware/tools/circuit.py).
+  static constexpr int PIN_VBAT_SENSE = 2;   // ADC1_CH1, VBAT through 1M/1M
+  static constexpr int PIN_VBUS_SENSE = 10;  // VBUS through 100k/100k: USB present
 #endif
 
 // ── Piezo pitch detection ────────────────────────────────────────────────
@@ -277,9 +280,10 @@ static volatile uint8_t g_ledR = 0, g_ledG = 0, g_ledB = 0;
 #define SLIDEPOD_LED_UUID  "d5e40003-7537-4463-a441-27f2d3140fab"
 #define SLIDEPOD_NAME_UUID "d5e40004-7537-4463-a441-27f2d3140fab"
 #define SLIDEPOD_INFO_UUID "d5e40005-7537-4463-a441-27f2d3140fab"
+#define SLIDEPOD_POWER_UUID "d5e40006-7537-4463-a441-27f2d3140fab"
 
 // Firmware version, reported in the info characteristic.
-#define SLIDEPOD_FW "0.3.0"
+#define SLIDEPOD_FW "0.4.0"
 
 // Longest name, in UTF-8 bytes: fits the scan response (31 bytes) with room
 // to spare, and the app's lists.
@@ -334,6 +338,7 @@ static void load_name() {
 }
 
 static NimBLECharacteristic* posChr = nullptr;
+static NimBLECharacteristic* powerChr = nullptr;
 
 // LED colour set by the app (Easy mode colour-codes positions; only the app
 // knows the calibrated position). Write [1, r, g, b] to hold a colour,
@@ -470,6 +475,11 @@ static void ble_init() {
            g_serial, SLIDEPOD_FW, SLIDEPOD_REV);
   svc->createCharacteristic(SLIDEPOD_INFO_UUID, NIMBLE_PROPERTY::READ)
      ->setValue(std::string(info));
+  // Battery: see battery_update().
+  powerChr = svc->createCharacteristic(
+    SLIDEPOD_POWER_UUID,
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
+  );
   svc->start();
 
   // Advertisement (31 bytes): flags (3) + the service UUID (18) + the serial
@@ -532,6 +542,71 @@ static void setRgb(bool r, bool g, bool b) {
   setRgb8(r ? 255 : 0, g ? 255 : 0, b ? 255 : 0);
 }
 
+// ── Battery ─────────────────────────────────────────────────────────────
+// 1S LiPo, read through a 1M/1M divider every 2 s and smoothed. The charge
+// level comes from the resting-voltage curve, so on USB (charging, or no
+// battery fitted) it reads high: the app shows "charging" then.
+static constexpr uint8_t BATTERY_UNKNOWN = 0xFF;
+static uint8_t g_batteryPct = BATTERY_UNKNOWN;
+static uint16_t g_batteryMv = 0;
+static bool g_usbPower = false;
+
+// Percent for a resting cell voltage (mV), from a typical LiPo curve.
+static uint8_t lipo_percent(float mv) {
+  static const float curve[][2] = {
+    {3300, 0}, {3500, 5}, {3600, 10}, {3700, 25}, {3750, 35}, {3800, 45},
+    {3850, 55}, {3900, 63}, {4000, 78}, {4100, 90}, {4200, 100},
+  };
+  constexpr int n = sizeof curve / sizeof curve[0];
+  if (mv <= curve[0][0]) return 0;
+  if (mv >= curve[n - 1][0]) return 100;
+  for (int i = 1; i < n; i++) {
+    if (mv <= curve[i][0]) {
+      const float t = (mv - curve[i - 1][0]) / (curve[i][0] - curve[i - 1][0]);
+      return (uint8_t)(curve[i - 1][1] + t * (curve[i][1] - curve[i - 1][1]) + 0.5f);
+    }
+  }
+  return 100;
+}
+
+#if !defined(WOKWI_SIM)
+// Returns true when the reading changed enough to tell the app.
+static bool battery_update() {
+  static uint32_t last = 0;
+  static float smooth = 0;
+  if (last && millis() - last < 2000) return false;
+  last = millis();
+  uint32_t sum = 0;
+  for (int i = 0; i < 16; i++) sum += analogReadMilliVolts(PIN_VBAT_SENSE);
+  const float mv = 2.0f * sum / 16;  // undo the 1M/1M divider
+  smooth = smooth == 0 ? mv : smooth + 0.2f * (mv - smooth);
+  const bool usb = analogReadMilliVolts(PIN_VBUS_SENSE) > 1500;  // 2.5 V on USB
+  // Below 2.5 V there's no cell (or a dead one behind its protection).
+  const uint8_t pct = smooth < 2500 ? BATTERY_UNKNOWN : lipo_percent(smooth);
+  const bool changed = pct != g_batteryPct || usb != g_usbPower;
+  g_batteryPct = pct;
+  g_batteryMv = (uint16_t)smooth;
+  g_usbPower = usb;
+  return changed;
+}
+#else
+static bool battery_update() { return false; }
+#endif
+
+#if !defined(WOKWI_SIM) && !defined(SLIDEPOD_NO_BLE)
+// 4 bytes: percent (0–100, 0xFF = unknown), flags (bit 0: on USB power),
+// battery mV (u16 LE).
+static void ble_power(bool notify) {
+  if (!powerChr) return;
+  const uint8_t v[4] = {g_batteryPct, (uint8_t)(g_usbPower ? 1 : 0),
+                        (uint8_t)g_batteryMv, (uint8_t)(g_batteryMv >> 8)};
+  powerChr->setValue(v, sizeof v);
+  if (notify && powerChr->getSubscribedCount()) powerChr->notify();
+}
+#else
+static void ble_power(bool) {}
+#endif
+
 void setup() {
   Serial.begin(115200);
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
@@ -575,6 +650,9 @@ void setup() {
 
   piezo_init();
   ble_init();
+  battery_update();
+  ble_power(false);
+  Serial.printf("# battery %u mV, %u%%, usb=%d\n", g_batteryMv, g_batteryPct, g_usbPower);
 
   setRgb(false, true, false);   // green = ready
   Serial.println("# SlidePod ready");
@@ -594,6 +672,10 @@ void loop() {
 #endif
 
   ble_keep_fast();
+  if (battery_update()) {
+    ble_power(true);
+    Serial.printf("# battery %u mV, %u%%, usb=%d\n", g_batteryMv, g_batteryPct, g_usbPower);
+  }
 
   uint16_t raw = tof_read();
   if (!tof_ok()) {

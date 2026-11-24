@@ -79,3 +79,34 @@ String? podNameProblem(String name) {
   }
   return null;
 }
+
+/// The pod's battery, from firmware 0.4: [percent] is 0–100, or null when
+/// it can't tell (no battery fitted). On USB power the cell is charging (or
+/// absent), so the level reads high; show [usb] instead of trusting it.
+class PodPower {
+  final int? percent;
+  final bool usb;
+  final int millivolts;
+  const PodPower({required this.percent, required this.usb, required this.millivolts});
+
+  /// From the power characteristic: percent (0xFF = unknown), flags (bit 0:
+  /// USB), mV (u16 LE).
+  static PodPower? fromBytes(List<int> b) {
+    if (b.length < 4) return null;
+    return PodPower(
+      percent: b[0] <= 100 ? b[0] : null,
+      usb: b[1] & 1 == 1,
+      millivolts: b[2] | (b[3] << 8),
+    );
+  }
+
+  /// Worth warning about: under 15 %, and not charging.
+  bool get low => !usb && percent != null && percent! < 15;
+
+  /// As the app shows it: "72 %", "Charging", or "–" when unknown.
+  String get label => usb
+      ? 'Charging'
+      : percent == null
+          ? '–'
+          : '$percent\u00A0%';
+}

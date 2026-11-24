@@ -227,6 +227,8 @@ class _PodSheetState extends State<PodSheet> {
                       : [
                           'Serial ${pod.serial}',
                           if (pod.firmware != null) 'firmware ${pod.firmware}',
+                          if (widget.source.power != null)
+                            'battery ${widget.source.power!.label}',
                         ].join(' · '),
                   style: theme.textTheme.bodySmall,
                 ),
