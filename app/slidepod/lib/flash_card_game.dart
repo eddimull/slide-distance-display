@@ -251,6 +251,13 @@ class FlashCardRound {
   /// When the slide entered an answering position, and which (null = not
   /// in one); playing levels: the pitch over the hold so far.
   int? _enteredAt, _enteredPos;
+
+  /// When the sensor last had a reading.
+  int? _seenAt;
+
+  /// A gap in the readings this short doesn't break a hold: far out (6th,
+  /// 7th) the sensor misses about half its readings. Not a scoring rule.
+  static const blindGapMs = 250;
   final _holdCents = <double>[];
 
   /// Playing levels: the pitch heard last, against the card's note
@@ -326,7 +333,10 @@ class FlashCardRound {
   /// sensor has no reading (a blind sensor can't confirm a hold). [freq]
   /// is the pitch heard (playing levels; null = silence).
   void update(int now, double? semis, {double? freq}) {
-    if (semis != null) _at = (1 + semis.round()).clamp(1, 7);
+    if (semis != null) {
+      _at = (1 + semis.round()).clamp(1, 7);
+      _seenAt = now;
+    }
     switch (phase) {
       case FlashPhase.idle:
       case FlashPhase.done:
@@ -350,6 +360,12 @@ class FlashCardRound {
           for (final p in card!.positions) {
             if ((semis - (p - 1)).abs() <= rules.tolerance) zone = p;
           }
+        } else if (_enteredPos != null &&
+            _seenAt != null &&
+            now - _seenAt! <= blindGapMs) {
+          // No reading for a moment (common far out, in 6th and 7th):
+          // still where it last was, so the hold goes on.
+          zone = _enteredPos;
         }
         double? cents;
         if (rules.needsPitch) {
@@ -365,7 +381,8 @@ class FlashCardRound {
             _holdCents.clear();
           }
           if (cents != null) _holdCents.add(cents);
-          if (now - _enteredAt! >= rules.holdMs) {
+          // A gap can carry a hold, but it finishes on a real reading.
+          if (now - _enteredAt! >= rules.holdMs && semis != null) {
             _finish(now, _enteredAt! - _shownAt, zone);
             return;
           }
