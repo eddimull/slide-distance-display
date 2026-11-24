@@ -62,9 +62,17 @@ class _FirmwareUpdateScreenState extends State<FirmwareUpdateScreen> {
       setState(() => _step = _Step.restarting);
       final back = await widget.source.reconnect();
       if (!mounted) return;
+      // A firmware that doesn't start is rolled back by the pod: then it's
+      // still on the old version.
+      final now = widget.source.pod?.firmware;
+      if (back && now != null && now != widget.build.version) {
+        _fail('The new firmware didn\'t start properly, so the SlidePod went '
+            'back to $now. Nothing is lost; please let us know.');
+        return;
+      }
       setState(() {
         _step = _Step.done;
-        if (!back) _error = 'Updated. Reconnect from the pod button when it\'s back.';
+        if (!back) _error = 'Installed. Reconnect from the pod button when it\'s back.';
       });
     } on OtaException catch (e) {
       _fail(e.message);

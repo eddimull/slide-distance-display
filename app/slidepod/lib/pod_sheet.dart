@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'account.dart';
 import 'ui/top_bar.dart';
@@ -189,6 +190,10 @@ class _PodSheetState extends State<PodSheet> {
   /// Newer firmware exists, but this pod's can't take it over Bluetooth.
   bool _usbOnly = false;
 
+  /// Offered test (beta) firmware too: saved on this phone.
+  bool _beta = false;
+  static const _betaKey = 'firmware_beta';
+
   PodInfo? get _pod => widget.source.pod;
 
   @override
@@ -198,7 +203,8 @@ class _PodSheetState extends State<PodSheet> {
   }
 
   Future<void> _checkFirmware() async {
-    final m = await (widget.catalog ?? FirmwareCatalog.shared).manifest();
+    _beta = (await SharedPreferences.getInstance()).getBool(_betaKey) ?? false;
+    final m = await (widget.catalog ?? FirmwareCatalog.shared).manifest(beta: _beta);
     final pod = _pod;
     if (!mounted || m == null || pod == null) return;
     final b = m.updateFor(pod.hardware, pod.firmware);
@@ -206,6 +212,12 @@ class _PodSheetState extends State<PodSheet> {
       _update = pod.ota ? b : null;
       _usbOnly = b != null && !pod.ota;
     });
+  }
+
+  Future<void> _setBeta(bool on) async {
+    await (await SharedPreferences.getInstance()).setBool(_betaKey, on);
+    setState(() => _beta = on);
+    await _checkFirmware();
   }
 
   Future<void> _run(Future<void> Function() job) async {
@@ -377,6 +389,13 @@ class _PodSheetState extends State<PodSheet> {
                                   widget.onCalibrate!();
                                 },
                         ),
+                      if (widget.onUpdate != null && pod != null && pod.ota)
+                        _SwitchRow(
+                          title: 'Test firmware',
+                          subtitle: 'New firmware before everyone else',
+                          value: _beta,
+                          onChanged: _busy ? null : _setBeta,
+                        ),
                       if (_update case final b?)
                         _Row(
                           icon: Icons.system_update_alt,
@@ -501,6 +520,39 @@ class _Tile extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(label, style: const TextStyle(fontSize: 11, color: Seventh.muted)),
+          ],
+        ),
+      );
+}
+
+class _SwitchRow extends StatelessWidget {
+  final String title, subtitle;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+  const _SwitchRow(
+      {required this.title, required this.subtitle, required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        constraints: const BoxConstraints(minHeight: 52),
+        padding: const EdgeInsets.only(left: 14, right: 6),
+        decoration:
+            const BoxDecoration(border: Border(top: BorderSide(color: Seventh.line))),
+        child: Row(
+          children: [
+            const Icon(Icons.science_outlined, size: 20, color: Seventh.body),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 15, color: Seventh.text)),
+                  Text(subtitle, style: Seventh.small),
+                ],
+              ),
+            ),
+            Switch(value: value, onChanged: onChanged),
           ],
         ),
       );
