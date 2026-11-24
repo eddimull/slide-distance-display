@@ -580,7 +580,9 @@ static bool ota_busy() { return g_otaActive; }
 // it resets before saying it works, the bootloader goes back to the
 // previous one. The Arduino core says so at once unless this returns true;
 // we say so once BLE is up and it has run CONFIRM_MS (see ota_confirm).
-bool verifyRollbackLater() { return true; }
+// extern "C": the core's weak default is C; a C++ definition wouldn't
+// replace it (the first test image marked itself good straight away).
+extern "C" bool verifyRollbackLater() { return true; }
 
 static constexpr uint32_t CONFIRM_MS = 15000;
 
