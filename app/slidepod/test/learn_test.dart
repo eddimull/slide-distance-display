@@ -161,7 +161,7 @@ void main() {
     expect(best.detail, matches(RegExp(r'^\d+ found · combo \d+')));
     expect(find.text(thousands(best.score)), findsOneWidget);
 
-    await tester.tap(find.text('High scores'));
+    await tester.tap(find.text('Scores'));
     await tester.pumpAndSettle();
     expect(find.byType(HighScoresScreen), findsOneWidget);
     expect(find.text('Best'), findsOneWidget);

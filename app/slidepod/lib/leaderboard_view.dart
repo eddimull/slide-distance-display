@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'account.dart';
 import 'account_screen.dart';
-import 'flash_card_screen.dart' show ordinal;
+import 'flash_card_screen.dart' show ordinal, thousands;
 import 'seventh_api.dart';
 import 'take_style.dart';
 
@@ -146,7 +146,7 @@ class _LeaderboardViewState extends State<LeaderboardView>
           else if (!meListed)
             Text(
                 'You\'re ${ordinal(b.me!.rank)} of ${b.players}, '
-                'with ${b.me!.score}.',
+                'with ${thousands(b.me!.score)}.',
                 key: const Key('my_place'),
                 style: const TextStyle(fontSize: 13, color: TakeStyle.body)),
           Padding(
@@ -206,7 +206,7 @@ class _LeaderboardViewState extends State<LeaderboardView>
               ],
             ),
           ),
-          Text('${e.score}',
+          Text(thousands(e.score),
               style: TakeStyle.mono.copyWith(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,

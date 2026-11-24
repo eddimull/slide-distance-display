@@ -1087,7 +1087,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                   side: const BorderSide(color: TakeStyle.line),
                 ),
                 onPressed: _openScores,
-                child: const Text('High scores'),
+                child: const Text('Scores'),
               ),
             ),
             const SizedBox(width: 10),
