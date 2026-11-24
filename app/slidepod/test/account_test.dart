@@ -262,6 +262,11 @@ void main() {
     });
 
     await openScores(tester, a);
+    // Signed in: this week's board comes first.
+    await tester.pumpAndSettle();
+    expect(find.text('Slider (you)'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('tab_phone')));
+    await tester.pumpAndSettle();
     expect(find.text('No scores yet. Play a round!'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('tab_week')));
@@ -275,7 +280,7 @@ void main() {
     await tester.tap(find.byKey(const Key('tab_all')));
     await tester.pumpAndSettle();
     expect(find.text('Unnamed player'), findsOneWidget);
-    expect(find.text('You\'re 61st of 120, with 4055.'), findsOneWidget);
+    expect(find.text('You\'re 61st of 120, with 4,055.'), findsOneWidget);
   });
 
   testWidgets('leaderboards: signed out asks to sign in; errors can retry',

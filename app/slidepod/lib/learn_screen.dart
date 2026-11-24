@@ -276,7 +276,7 @@ class _LearnScreenState extends State<LearnScreen> {
               ),
               TextButton(
                 onPressed: () => _scores(l),
-                child: const Text('High scores'),
+                child: const Text('Scores'),
               ),
               const SizedBox(width: 4),
               FilledButton(

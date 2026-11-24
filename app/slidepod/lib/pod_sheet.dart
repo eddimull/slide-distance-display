@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'account.dart';
+import 'ui/top_bar.dart';
+import 'ui/seventh.dart';
+import 'account_screen.dart';
 import 'pod_info.dart';
 import 'seventh_api.dart';
 import 'slidepod_ble.dart';
@@ -146,11 +149,15 @@ class PodSheet extends StatefulWidget {
   final SlidePodSource source;
   final Account? account;
   final VoidCallback onDisconnect;
+
+  /// Opens calibration (the sheet closes first); null hides the row.
+  final VoidCallback? onCalibrate;
   const PodSheet({
     super.key,
     required this.source,
     required this.account,
     required this.onDisconnect,
+    this.onCalibrate,
   });
 
   @override
@@ -204,94 +211,169 @@ class _PodSheetState extends State<PodSheet> {
   Widget build(BuildContext context) {
     final pod = _pod;
     final account = widget.account;
-    final theme = Theme.of(context);
+    final power = widget.source.power;
     return ListenableBuilder(
       listenable: account ?? _noAccount,
       builder: (context, _) {
         final linked = pod == null ? null : account?.linkedPod(pod.serial);
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            padding: const EdgeInsets.fromLTRB(Seventh.gutter, 0, Seventh.gutter, 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  pod?.name ?? 'SlidePod',
-                  style: theme.textTheme.titleLarge,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  pod == null
-                      ? 'Older firmware: update it to rename this pod or link it to your account.'
-                      : [
-                          'Serial ${pod.serial}',
-                          if (pod.firmware != null) 'firmware ${pod.firmware}',
-                          if (widget.source.power != null)
-                            'battery ${widget.source.power!.label}',
-                        ].join(' · '),
-                  style: theme.textTheme.bodySmall,
+                // The pod, and renaming it.
+                Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                          color: Seventh.raised,
+                          borderRadius: BorderRadius.circular(16)),
+                      child: const Icon(Icons.sensors, color: Seventh.inTune),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(pod?.name ?? 'SlidePod',
+                              overflow: TextOverflow.ellipsis,
+                              style: Seventh.screenTitle.copyWith(fontSize: 22)),
+                          const Text('Connected',
+                              style: TextStyle(fontSize: 13, color: Seventh.inTune)),
+                        ],
+                      ),
+                    ),
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 40),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          textStyle: const TextStyle(
+                              fontFamily: Seventh.bodyFont,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
+                      onPressed: pod == null || _busy ? null : _rename,
+                      child: const Text('Rename'),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
-                      child: OutlinedButton(
-                        onPressed: pod == null || _busy ? null : _rename,
-                        child: const Text('Rename'),
+                      child: _Tile(
+                        label: 'Battery',
+                        value: power == null
+                            ? '–'
+                            : power.usb && power.charged
+                                ? 'Full'
+                                : power.percent == null
+                                    ? '–'
+                                    : '${power.percent}',
+                        unit: power?.percent != null && !(power!.usb && power.charged)
+                            ? '\u00A0%'
+                            : null,
+                        lead: power == null
+                            ? null
+                            : BatteryGlyph(
+                                percent: power.percent ?? 0,
+                                charging: power.usb,
+                                color: power.usb
+                                    ? Seventh.inTune
+                                    : power.low
+                                        ? Seventh.off
+                                        : Seventh.body),
                       ),
                     ),
                     const SizedBox(width: 8),
+                    Expanded(child: _Tile(label: 'Code', value: pod?.code ?? '–')),
+                    const SizedBox(width: 8),
                     Expanded(
-                      child: OutlinedButton(
-                        onPressed: _busy
-                            ? null
-                            : () => _run(widget.source.blink),
-                        child: const Text('Blink'),
-                      ),
-                    ),
+                        child: _Tile(label: 'Firmware', value: pod?.firmware ?? 'old')),
                   ],
                 ),
-                if (pod != null && account != null && account.available) ...[
-                  const SizedBox(height: 16),
-                  if (!account.signedIn)
-                    Text(
-                      'Sign in (Learn → leaderboards) to link this SlidePod to your account.',
-                      style: theme.textTheme.bodySmall,
-                    )
-                  else if (widget.source.isMock)
-                    Text(
-                      'Mock pods can\'t be linked.',
-                      style: theme.textTheme.bodySmall,
-                    )
-                  else if (linked != null) ...[
-                    Text(
-                      'Linked to your account.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => _run(() => account.unlinkPod(linked)),
-                      child: const Text('Remove from my account'),
-                    ),
-                  ] else
-                    FilledButton(
-                      onPressed: _busy
-                          ? null
-                          : () => _run(() async {
-                              await account.linkPod(pod);
-                              _message = 'Linked to your account.';
-                            }),
-                      child: const Text('Add to my account'),
-                    ),
-                ],
+                const SizedBox(height: 12),
+                Container(
+                  decoration: BoxDecoration(
+                      color: Seventh.raised,
+                      borderRadius: BorderRadius.circular(Seventh.cardRadius)),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      _Row(
+                        icon: Icons.light_mode_outlined,
+                        title: 'Blink',
+                        trailing: 'Which pod is this?',
+                        onTap: _busy ? null : () => _run(widget.source.blink),
+                      ),
+                      if (widget.onCalibrate != null)
+                        _Row(
+                          icon: Icons.tune,
+                          title: 'Recalibrate',
+                          divider: true,
+                          onTap: _busy
+                              ? null
+                              : () {
+                                  Navigator.pop(context);
+                                  widget.onCalibrate!();
+                                },
+                        ),
+                      if (pod != null && account != null && account.available)
+                        if (widget.source.isMock)
+                          const _Row(
+                              icon: Icons.person_outline,
+                              title: 'Mock pods can\'t be linked',
+                              divider: true)
+                        else if (!account.signedIn)
+                          _Row(
+                            icon: Icons.person_outline,
+                            title: 'Sign in to link it to your account',
+                            divider: true,
+                            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                                builder: (_) => AccountScreen(account: account))),
+                          )
+                        else if (linked != null)
+                          _Row(
+                            icon: Icons.person,
+                            iconColor: Seventh.inTune,
+                            title: 'On your account',
+                            trailing: 'Remove',
+                            trailingColor: Seventh.accent,
+                            divider: true,
+                            onTap: _busy ? null : () => _run(() => account.unlinkPod(linked)),
+                          )
+                        else
+                          _Row(
+                            icon: Icons.person_add_alt,
+                            iconColor: Seventh.accent,
+                            title: 'Add to my account',
+                            divider: true,
+                            onTap: _busy
+                                ? null
+                                : () => _run(() async {
+                                      await account.linkPod(pod);
+                                      _message = 'Linked to your account.';
+                                    }),
+                          ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  pod == null
+                      ? 'Older firmware: update it to rename this pod or link it to your account.'
+                      : 'Serial ${pod.serial} · firmware ${pod.firmware ?? '–'}',
+                  style: Seventh.small,
+                ),
                 if (_message != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_message!, style: theme.textTheme.bodyMedium),
+                  const SizedBox(height: 10),
+                  Text(_message!, style: const TextStyle(fontSize: 14, color: Seventh.body)),
                 ],
                 const SizedBox(height: 16),
-                TextButton(
+                OutlinedButton(
                   onPressed: _busy
                       ? null
                       : () {
@@ -307,6 +389,93 @@ class _PodSheetState extends State<PodSheet> {
       },
     );
   }
+}
+
+class _Tile extends StatelessWidget {
+  final String label, value;
+  final String? unit;
+  final Widget? lead;
+  const _Tile({required this.label, required this.value, this.unit, this.lead});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+            color: Seventh.raised, borderRadius: BorderRadius.circular(14)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (lead != null) ...[lead!, const SizedBox(width: 6)],
+                Flexible(
+                  child: Text.rich(
+                    TextSpan(text: value, children: [
+                      if (unit != null)
+                        TextSpan(
+                            text: unit,
+                            style: const TextStyle(fontSize: 12, color: Seventh.muted)),
+                    ]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Seventh.mono.copyWith(
+                        fontSize: 18, fontWeight: FontWeight.w600, color: Seventh.text),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(label, style: const TextStyle(fontSize: 11, color: Seventh.muted)),
+          ],
+        ),
+      );
+}
+
+class _Row extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String? trailing;
+  final Color trailingColor;
+  final bool divider;
+  final VoidCallback? onTap;
+  const _Row({
+    required this.icon,
+    required this.title,
+    this.iconColor = Seventh.body,
+    this.trailing,
+    this.trailingColor = Seventh.muted,
+    this.divider = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 52),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+              border: divider
+                  ? const Border(top: BorderSide(color: Seventh.line))
+                  : null),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: iconColor),
+              const SizedBox(width: 12),
+              Expanded(child: Text(title, style: const TextStyle(fontSize: 15, color: Seventh.text))),
+              if (trailing != null)
+                Text(trailing!,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: trailingColor == Seventh.muted
+                            ? FontWeight.w400
+                            : FontWeight.w600,
+                        color: trailingColor)),
+            ],
+          ),
+        ),
+      );
 }
 
 class _RenameDialog extends StatefulWidget {

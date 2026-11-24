@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'account.dart';
-import 'account_screen.dart';
 import 'pod_sheet.dart';
 import 'calibration_screen.dart';
 import 'flash_card_screen.dart';
 import 'gliss_take.dart';
 import 'high_scores.dart';
+import 'high_scores_screen.dart';
 import 'learn_screen.dart';
 import 'live_view.dart';
 import 'one_euro.dart';
@@ -624,15 +624,29 @@ class _HomePageState extends State<HomePage> {
         onTap: _scanning ? null : _scanAndConnect,
       );
 
-  Widget _profile() => ProfileAvatar(
-        account: _acct,
-        onTap: () {
-          final a = _acct;
-          if (a == null) return;
-          Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => AccountScreen(account: a)));
-        },
-      );
+  Widget _profile() => ProfileAvatar(account: _acct, onTap: _openScores);
+
+  /// Scores, for the games you've unlocked (the profile button).
+  Future<void> _openScores() async {
+    final scores = await (_scores ??= HighScores.open());
+    if (!mounted) return;
+    final open = unlockedLevels(learnLevels, scores);
+    final games = [
+      for (final (i, l) in learnLevels.indexed)
+        if (open[i] && l.gameId != null && l.build != null)
+          ScoreGame(l.gameId!, l.title, '${l.title} · Level ${l.level}'),
+    ];
+    final first = games.first;
+    await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => HighScoresScreen(
+              scores: scores,
+              gameId: first.id,
+              title: first.title,
+              subtitle: first.subtitle,
+              account: _acct,
+              games: games,
+            )));
+  }
 
   /// The top bar of each tab.
   PreferredSizeWidget _topBar(String title) =>
@@ -650,6 +664,7 @@ class _HomePageState extends State<HomePage> {
         source: _source,
         account: account,
         onDisconnect: () => _source.disconnect(),
+        onCalibrate: _openCalibration,
       ),
     );
     if (mounted) setState(() => _status = _podStatus());
