@@ -72,6 +72,9 @@ class LiveView extends StatelessWidget {
   final int upperLearned;
   final VoidCallback onCalibrate;
 
+  /// The instrument whose calibration this is (signed in).
+  final String? instrument;
+
   /// Positions (0–1) and pitch positions (0–1, null where silent), oldest
   /// first, at ~50 Hz.
   final List<double> positionHistory;
@@ -92,6 +95,7 @@ class LiveView extends StatelessWidget {
     required this.calibrated,
     required this.upperLearned,
     required this.onCalibrate,
+    this.instrument,
     required this.positionHistory,
     required this.pitchHistory,
   });
@@ -127,6 +131,7 @@ class LiveView extends StatelessWidget {
                   _CalibrationLine(
                       calibrated: calibrated,
                       upperLearned: upperLearned,
+                      instrument: instrument,
                       onCalibrate: onCalibrate),
                 ],
               ],
@@ -604,16 +609,23 @@ class _TracePainter extends CustomPainter {
 class _CalibrationLine extends StatelessWidget {
   final bool calibrated;
   final int upperLearned;
+  final String? instrument;
   final VoidCallback onCalibrate;
   const _CalibrationLine(
-      {required this.calibrated, required this.upperLearned, required this.onCalibrate});
+      {required this.calibrated,
+      required this.upperLearned,
+      this.instrument,
+      required this.onCalibrate});
 
   @override
   Widget build(BuildContext context) => Row(
         children: [
           Expanded(
             child: Text(
-              calibrated ? 'Calibrated · upper $upperLearned/4' : 'Not calibrated',
+              [
+                calibrated ? 'Calibrated · upper $upperLearned/4' : 'Not calibrated',
+                ?instrument,
+              ].join(' · '),
               style: Seventh.small,
             ),
           ),

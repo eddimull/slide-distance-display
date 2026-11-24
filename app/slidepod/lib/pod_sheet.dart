@@ -158,6 +158,9 @@ class PodSheet extends StatefulWidget {
   /// first); null: no updates offered.
   final void Function(FirmwareBuild)? onUpdate;
 
+  /// Opens the instruments (the sheet closes first); null hides the row.
+  final VoidCallback? onInstruments;
+
   /// Where updates come from (tests).
   final FirmwareCatalog? catalog;
   const PodSheet({
@@ -167,6 +170,7 @@ class PodSheet extends StatefulWidget {
     required this.onDisconnect,
     this.onCalibrate,
     this.onUpdate,
+    this.onInstruments,
     this.catalog,
   });
 
@@ -342,10 +346,29 @@ class _PodSheetState extends State<PodSheet> {
                         trailing: 'Which pod is this?',
                         onTap: _busy ? null : () => _run(widget.source.blink),
                       ),
+                      if (widget.onInstruments != null &&
+                          account != null &&
+                          account.available &&
+                          !widget.source.isMock)
+                        _Row(
+                          icon: Icons.music_note_outlined,
+                          title: 'Instrument',
+                          trailing: account.currentInstrument?.name ??
+                              (account.signedIn ? 'Add yours' : 'Sign in to save it'),
+                          trailingColor: account.currentInstrument == null
+                              ? Seventh.accent
+                              : Seventh.muted,
+                          divider: true,
+                          onTap: () {
+                            Navigator.pop(context);
+                            widget.onInstruments!();
+                          },
+                        ),
                       if (widget.onCalibrate != null)
                         _Row(
                           icon: Icons.tune,
                           title: 'Recalibrate',
+                          trailing: account?.currentInstrument?.name,
                           divider: true,
                           onTap: _busy
                               ? null

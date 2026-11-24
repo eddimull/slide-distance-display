@@ -11,7 +11,11 @@ const seventhApiBase =
 class ApiException implements Exception {
   final int status;
   final String message;
-  const ApiException(this.status, this.message);
+
+  /// The response, when it says more (a 409 on a calibration carries the
+  /// newer copy).
+  final Map<String, dynamic>? body;
+  const ApiException(this.status, this.message, {this.body});
 
   /// 401: the token is no good any more (revoked, or the account deleted).
   bool get signedOut => status == 401;
@@ -104,6 +108,53 @@ class LinkedPod {
         m['name'] as String?,
         m['firmware'] as String?,
       );
+}
+
+/// One of the player's instruments; [calibration] only when fetched one at
+/// a time (the app's SlideCalibration JSON).
+class Instrument {
+  final int id;
+  final String name, kind;
+  final String? make;
+  final int? podId;
+  final bool hasCalibration;
+  final DateTime? calibrationAt;
+  final String? calibration;
+  const Instrument({
+    required this.id,
+    required this.name,
+    required this.kind,
+    this.make,
+    this.podId,
+    this.hasCalibration = false,
+    this.calibrationAt,
+    this.calibration,
+  });
+
+  static const kinds = {
+    'tenor': 'Tenor',
+    'tenor_f': 'Tenor with F attachment',
+    'bass': 'Bass',
+    'alto': 'Alto',
+    'other': 'Other',
+  };
+
+  String get kindLabel => kinds[kind] ?? kind;
+
+  static Instrument fromJson(Map<String, dynamic> m) {
+    final cal = m['calibration'];
+    final at = m['calibration_updated_at'] as String?;
+    return Instrument(
+      id: (m['id'] as num).toInt(),
+      name: m['name'] as String,
+      kind: m['kind'] as String,
+      make: m['make'] as String?,
+      podId: (m['pod_id'] as num?)?.toInt(),
+      hasCalibration: m['has_calibration'] == true || cal != null,
+      calibrationAt: at == null ? null : DateTime.parse(at),
+      calibration: cal == null ? null : jsonEncode(cal),
+    );
+  }
 }
 
 class SeventhApi {
@@ -208,6 +259,47 @@ class SeventhApi {
   Future<void> unlinkPod(String token, int id) =>
       _send('DELETE', '/pods/$id', token: token);
 
+  Future<List<Instrument>> instruments(String token) async => [
+        for (final i in ((await _send('GET', '/instruments', token: token))[
+                'instruments'] as List? ??
+            const []))
+          Instrument.fromJson(i as Map<String, dynamic>)
+      ];
+
+  /// With its calibration.
+  Future<Instrument> instrument(String token, int id) async => Instrument.fromJson(
+      (await _send('GET', '/instruments/$id', token: token))['instrument']
+          as Map<String, dynamic>);
+
+  Future<Instrument> addInstrument(String token,
+          {required String name, required String kind, String? make, int? podId}) async =>
+      Instrument.fromJson((await _send('POST', '/instruments', token: token, body: {
+        'name': name,
+        'kind': kind,
+        'make': ?make,
+        'pod_id': ?podId,
+      }))['instrument'] as Map<String, dynamic>);
+
+  /// [fields]: name, kind, make, pod_id (null clears make and pod_id).
+  Future<Instrument> updateInstrument(
+          String token, int id, Map<String, Object?> fields) async =>
+      Instrument.fromJson((await _send('PATCH', '/instruments/$id',
+          token: token, body: fields))['instrument'] as Map<String, dynamic>);
+
+  Future<void> deleteInstrument(String token, int id) =>
+      _send('DELETE', '/instruments/$id', token: token);
+
+  /// Throws [ApiException] 409 with the newer saved copy in its body when
+  /// [at] is older than what's saved.
+  Future<Instrument> putCalibration(
+          String token, int id, String calibration, DateTime at) async =>
+      Instrument.fromJson((await _send('PUT', '/instruments/$id/calibration',
+          token: token,
+          body: {
+            'calibration': jsonDecode(calibration),
+            'updated_at': at.toUtc().toIso8601String(),
+          }))['instrument'] as Map<String, dynamic>);
+
   Future<Map<String, dynamic>> _send(String method, String path,
       {String? token, Map<String, Object?>? body}) async {
     final req = http.Request(method, Uri.parse('$base$path'))
@@ -230,7 +322,8 @@ class SeventhApi {
     }
     final msg = json is Map<String, dynamic> ? json['message'] : null;
     throw ApiException(res.statusCode,
-        msg is String ? msg : 'The server said no (${res.statusCode}).');
+        msg is String ? msg : 'The server said no (${res.statusCode}).',
+        body: json is Map<String, dynamic> ? json : null);
   }
 
   static Object? _decode(String s) {
