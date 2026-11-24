@@ -33,8 +33,20 @@ class _MicPitchDetector implements PitchDetector {
 
   @override
   Future<void> start() async {
-    if (_sub != null) return;
     final rec = _recorder ??= AudioRecorder();
+    if (_sub != null) {
+      // Already on, unless Android took the mic away underneath: playing
+      // a take (just_audio) takes audio focus and the recorder pauses.
+      if (await rec.isPaused()) {
+        await rec.resume();
+        return;
+      }
+      if (await rec.isRecording()) return;
+      // Stopped altogether: start it again.
+      await _sub?.cancel();
+      _sub = null;
+      _carry = null;
+    }
     if (!await rec.hasPermission()) {
       throw StateError('Microphone permission denied');
     }
