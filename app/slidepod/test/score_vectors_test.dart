@@ -54,7 +54,7 @@ Map<String, Object?> playRound(FlashGameSpec spec, int seed, {bool fast = false}
   return {
     'name': '${spec.id} seed $seed${fast ? ' fast' : ''}',
     'game': spec.id,
-    'rules_version': 1,
+    'rules_version': spec.rulesVersion,
     'cards': [for (final r in round.results) r.toLog()],
     'expected': {
       'score': round.score,

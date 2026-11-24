@@ -94,7 +94,13 @@ const playTheNote = FlashGameSpec(
   notes: true,
   deck: _notes,
   // Allows time to start the note; the note must hold within ±25¢.
-  rules: FlashCardRules(parBaseMs: 1000, pitchGateCents: 25),
+  // Version 2: the slide counts within ±0.6 of the position (±0.3 before).
+  // Played in tune, a note sits where that horn plays it, which can be
+  // ~0.4 from the chart (in-tune E3 and E4 at 2.4 on a test horn, B2 at
+  // 6.6): ±0.3 turned away notes played spot on. The next position that
+  // plays the same note is 3 or more away, so this can't take a wrong one.
+  rules: FlashCardRules(parBaseMs: 1000, pitchGateCents: 25, tolerance: 0.6),
+  rulesVersion: 2,
 );
 
 /// A flash-card game ([positionFlash], [noteFlash], [playTheNote]): a card comes up, put

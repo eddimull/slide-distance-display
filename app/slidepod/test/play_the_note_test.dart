@@ -66,6 +66,23 @@ void main() {
       expect(r.points, (r.base + r.bonus) * r.multiplier);
     });
 
+    test('played in tune, the slide counts within ±0.6 of the position', () {
+      // Where this horn plays D3 in tune, a little out from the chart's 4th
+      // (E3 and E4 sat at 2.4 on a test horn and ±0.3 turned them away).
+      void at(int ms, double position) {
+        final end = now + ms;
+        while (now < end) {
+          now += 20;
+          round.update(now, position - 1, freq: hz(card, 0));
+        }
+      }
+      at(400, 4.7); // past ±0.6: not there
+      expect(round.phase, FlashPhase.card);
+      at(400, 4.45);
+      expect(round.phase, FlashPhase.feedback);
+      expect(round.results.single.position, 4);
+    });
+
     test('the note alone isn\'t enough: the slide has to be there', () {
       play(1000, 1, 0); // lipped from 1st? still not in a position for D3
       expect(round.phase, FlashPhase.card);
