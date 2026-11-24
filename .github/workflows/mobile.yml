@@ -49,10 +49,26 @@ jobs:
   plan:
     if: ${{ !inputs.promote }}
     runs-on: ubuntu-latest
+    environment: production
     outputs:
       upload: ${{ steps.plan.outputs.upload }}
       build_number: ${{ steps.plan.outputs.build_number }}
+      play: ${{ steps.secrets.outputs.play }}
+      apple: ${{ steps.secrets.outputs.apple }}
     steps:
+      # Until a store's credentials are in place, its upload is skipped
+      # (with a warning) rather than failing every run.
+      - id: secrets
+        env:
+          PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          KEY: ${{ secrets.ASC_KEY_P8 }}
+          CERT: ${{ secrets.IOS_DIST_CERT_P12 }}
+        run: |
+          if [ -n "$PLAY" ]; then echo "play=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning::PLAY_SERVICE_ACCOUNT_JSON isn't set: Android builds signed but isn't uploaded to Play."; fi
+          if [ -n "$TEAM" ] && [ -n "$KEY" ] && [ -n "$CERT" ]; then echo "apple=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning::The Apple secrets aren't all set: iOS builds unsigned and isn't uploaded to TestFlight."; fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -123,7 +139,7 @@ jobs:
           name: android-aab
           path: app/slidepod/build/app/outputs/bundle/release/app-release.aab
       - name: Upload to Play (internal testing)
-        if: needs.plan.outputs.upload == 'true'
+        if: needs.plan.outputs.upload == 'true' && needs.plan.outputs.play == 'true'
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
@@ -137,7 +153,7 @@ jobs:
   ios:
     needs: plan
     runs-on: macos-15
-    environment: ${{ needs.plan.outputs.upload == 'true' && 'production' || '' }}
+    environment: ${{ needs.plan.outputs.upload == 'true' && needs.plan.outputs.apple == 'true' && 'production' || '' }}
     defaults:
       run:
         working-directory: app/slidepod
@@ -151,17 +167,17 @@ jobs:
       - run: flutter pub get
       # Pull requests: check it compiles, unsigned.
       - name: Build (unsigned)
-        if: needs.plan.outputs.upload != 'true'
+        if: needs.plan.outputs.upload != 'true' || needs.plan.outputs.apple != 'true'
         run: flutter build ios --release --no-codesign --build-number=${{ needs.plan.outputs.build_number }}
       - name: Distribution certificate
-        if: needs.plan.outputs.upload == 'true'
+        if: needs.plan.outputs.upload == 'true' && needs.plan.outputs.apple == 'true'
         uses: apple-actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.IOS_DIST_CERT_P12 }}
           p12-password: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
       - name: App Store provisioning profile
         id: profile
-        if: needs.plan.outputs.upload == 'true'
+        if: needs.plan.outputs.upload == 'true' && needs.plan.outputs.apple == 'true'
         uses: apple-actions/download-provisioning-profiles@v4
         with:
           bundle-id: app.seventh
@@ -170,7 +186,7 @@ jobs:
           api-key-id: ${{ secrets.ASC_KEY_ID }}
           api-private-key: ${{ secrets.ASC_KEY_P8 }}
       - name: Signing settings
-        if: needs.plan.outputs.upload == 'true'
+        if: needs.plan.outputs.upload == 'true' && needs.plan.outputs.apple == 'true'
         env:
           TEAM: ${{ secrets.APPLE_TEAM_ID }}
           PROFILES: ${{ steps.profile.outputs.profiles }}
@@ -205,7 +221,7 @@ jobs:
           EOF
       - name: Build the IPA
         id: ipa
-        if: needs.plan.outputs.upload == 'true'
+        if: needs.plan.outputs.upload == 'true' && needs.plan.outputs.apple == 'true'
         run: |
           flutter build ipa --release --build-number=${{ needs.plan.outputs.build_number }} \
             --export-options-plist="$RUNNER_TEMP/ExportOptions.plist"
@@ -213,12 +229,12 @@ jobs:
           echo "Built $ipa"
           echo "path=app/slidepod/$ipa" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
-        if: needs.plan.outputs.upload == 'true'
+        if: needs.plan.outputs.upload == 'true' && needs.plan.outputs.apple == 'true'
         with:
           name: ios-ipa
           path: ${{ steps.ipa.outputs.path }}
       - name: Upload to TestFlight
-        if: needs.plan.outputs.upload == 'true'
+        if: needs.plan.outputs.upload == 'true' && needs.plan.outputs.apple == 'true'
         uses: apple-actions/upload-testflight-build@v3
         with:
           app-path: ${{ steps.ipa.outputs.path }}
