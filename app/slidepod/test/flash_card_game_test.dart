@@ -107,15 +107,32 @@ void main() {
     expect(r.hit, isTrue);
   });
 
-  test('a blind sensor breaks the hold', () {
+  test('a sensor blind for long breaks the hold', () {
     final d = Driver();
     d.startToFirstCard();
     d.semis = d.target - 1.0;
-    d.step(200);
+    d.step(100);
     d.semis = null;
-    d.step(200);
+    d.step(FlashCardRound.blindGapMs + 150);
     expect(d.round.phase, FlashPhase.card);
     expect(d.round.holdProgress(d.now), 0);
+  });
+
+  test('missing readings for a moment don\'t (far out, half are missing)',
+      () {
+    final d = Driver();
+    d.startToFirstCard();
+    final t = d.target;
+    d.step(300);
+    // Every other reading missing, as in 7th.
+    for (var i = 0; i < 12 && d.round.phase == FlashPhase.card; i++) {
+      d.semis = i.isEven ? t - 1.0 : null;
+      d.step(40);
+    }
+    expect(d.round.phase, FlashPhase.feedback);
+    final r = d.round.results.single;
+    expect(r.hit, isTrue);
+    expect(r.ms, inInclusiveRange(300, 340));
   });
 
   test('not there in time: missed, no points', () {
