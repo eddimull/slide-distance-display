@@ -479,7 +479,8 @@ class _HomePageState extends State<HomePage> {
                     account: snap.data!.$2,
                     ensureMic: () async {
                       if (!_micActive && !_source.isMock) await _toggleMic();
-                    }),
+                    },
+                    pod: (_) => _podPill(compact: true)),
                 connected: _connected,
               ),
       );
@@ -491,7 +492,11 @@ class _HomePageState extends State<HomePage> {
     if (!mounted) return;
     await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => FlashCardScreen(
-          frames: _frames.stream, cal: _cal, scores: scores, account: account),
+          frames: _frames.stream,
+          cal: _cal,
+          scores: scores,
+          account: account,
+          pod: (_) => _podPill(compact: true)),
     ));
   }
 
