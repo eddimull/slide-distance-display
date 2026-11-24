@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:share_plus_platform_interface/share_plus_platform_interface.dart';
 import 'package:slidepod/take.dart';
 import 'package:slidepod/take_export.dart';
 
@@ -33,4 +35,26 @@ void main() {
     expect(exportName(named('Rochut No. 1, bars 1–8')), 'Rochut-No-1-bars-1-8');
     expect(exportName(named('♭♭')), 'id1');
   });
+
+  test('sharing names every file (it failed with "Is a directory")',
+      () async {
+    final share = _FakeShare();
+    SharePlatform.instance = share;
+    final a = synthScale();
+    a.take.title = 'B♭ major scale';
+    await shareTake(a, null);
+    final p = share.params!;
+    expect(p.fileNameOverrides, ['B-major-scale.csv', 'B-major-scale.take.json']);
+    expect(p.files, hasLength(2));
+    expect(p.text, contains('notes in tune'));
+  });
+}
+
+class _FakeShare extends SharePlatform with MockPlatformInterfaceMixin {
+  ShareParams? params;
+  @override
+  Future<ShareResult> share(ShareParams params) async {
+    this.params = params;
+    return const ShareResult('x', ShareResultStatus.success);
+  }
 }
