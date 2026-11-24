@@ -424,6 +424,7 @@ class _HomePageState extends State<HomePage> {
         builder: (_) => CalibrationScreen(
           frames: _frames.stream,
           onListeningFor: (n) => _mockCalPartial = n,
+          pod: (_) => _podPill(compact: true),
         ),
       ),
     );
@@ -529,7 +530,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _startMock() async {
     setState(() {
       _scanning = true;
-      _status = 'Starting mock...';
+      _status = 'Starting mock…';
     });
     await _source.connectFirst();
     if (mounted) setState(() => _scanning = false);
@@ -681,7 +682,7 @@ class _HomePageState extends State<HomePage> {
 
     setState(() {
       _scanning = true;
-      _status = 'Scanning...';
+      _status = 'Scanning…';
     });
 
     try {
@@ -698,7 +699,7 @@ class _HomePageState extends State<HomePage> {
       }
 
       if (results.length == 1) {
-        setState(() => _status = 'Connecting...');
+        setState(() => _status = 'Connecting…');
         await ble.connect(results.first.device);
         await _connectedTo();
       } else {
@@ -712,7 +713,7 @@ class _HomePageState extends State<HomePage> {
           isMine: (serial) => account.linkedPod(serial) != null,
         );
         if (device != null) {
-          setState(() => _status = 'Connecting...');
+          setState(() => _status = 'Connecting…');
           await ble.connect(device);
           await _connectedTo();
         } else {
