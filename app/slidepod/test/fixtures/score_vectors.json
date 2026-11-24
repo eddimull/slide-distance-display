@@ -984,7 +984,7 @@
     {
       "name": "play_the_note seed 1",
       "game": "play_the_note",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "n53",
@@ -1117,7 +1117,7 @@
     {
       "name": "play_the_note seed 2",
       "game": "play_the_note",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "n41",
@@ -1250,7 +1250,7 @@
     {
       "name": "play_the_note seed 3",
       "game": "play_the_note",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "n62",
@@ -1362,7 +1362,7 @@
     {
       "name": "play_the_note seed 4",
       "game": "play_the_note",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "n41",
@@ -1824,7 +1824,7 @@
     {
       "name": "play_the_note seed 9 fast",
       "game": "play_the_note",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "n51",
