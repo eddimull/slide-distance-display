@@ -9,6 +9,7 @@ import 'slide_calibration.dart';
 import 'take.dart';
 import 'take_store.dart';
 import 'take_style.dart';
+import 'ui/seventh.dart';
 
 /// Records a take from the moment it opens: every reading the home screen
 /// gets (slide and pitch) and the mic audio. Stop saves it and pops with
@@ -238,10 +239,11 @@ class _RecordScreenState extends State<RecordScreen> {
                             children: [
                               Text(
                                 pos == null ? '–' : '$pos',
-                                style: TextStyle(
+                                style: Seventh.mono.copyWith(
                                   fontSize: 96,
-                                  fontWeight: FontWeight.w300,
+                                  fontWeight: FontWeight.w600,
                                   height: 1,
+                                  letterSpacing: -3,
                                   color: pos == null
                                       ? TakeStyle.muted
                                       : TakeStyle.position(pos),
@@ -272,8 +274,9 @@ class _RecordScreenState extends State<RecordScreen> {
                                 Text(
                                   note == null ? '–' : noteName(note.$1),
                                   style: const TextStyle(
+                                    fontFamily: Seventh.titleFont,
                                     fontSize: 52,
-                                    fontWeight: FontWeight.w500,
+                                    fontWeight: FontWeight.w600,
                                     height: 1,
                                     color: TakeStyle.text,
                                   ),
@@ -291,7 +294,7 @@ class _RecordScreenState extends State<RecordScreen> {
                                 Text(
                                   _freq == null
                                       ? ' '
-                                      : '${_freq!.toStringAsFixed(1)} Hz',
+                                      : '${_freq!.toStringAsFixed(1)}\u00A0Hz',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     color: TakeStyle.muted,

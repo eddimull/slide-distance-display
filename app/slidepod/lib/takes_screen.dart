@@ -9,6 +9,8 @@ import 'take_analysis.dart';
 import 'take_stats.dart';
 import 'take_store.dart';
 import 'take_style.dart';
+import 'ui/seventh.dart';
+import 'ui/when.dart';
 
 /// Recorded takes, newest first. Record starts a new one (through
 /// [onRecord], which owns the live readings); a finished take opens in
@@ -104,6 +106,8 @@ class _TakesScreenState extends State<TakesScreen> {
                 onPressed: () => Navigator.pop(ctx, false),
                 child: const Text('Cancel')),
             FilledButton(
+                style: FilledButton.styleFrom(
+                    backgroundColor: Seventh.offBg, foregroundColor: Seventh.off),
                 onPressed: () => Navigator.pop(ctx, true),
                 child: const Text('Delete')),
           ],
@@ -123,18 +127,25 @@ class _TakesScreenState extends State<TakesScreen> {
             title: const Text('Takes',
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
           ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: widget.canRecord ? _record : null,
-        backgroundColor:
-            widget.canRecord ? TakeStyle.record : TakeStyle.chip,
-        foregroundColor: widget.canRecord ? Colors.white : TakeStyle.muted,
-        icon: const Icon(Icons.fiber_manual_record),
-        label: Text(widget.canRecord ? 'Record take' : 'Connect to record'),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(Seventh.gutter, 8, Seventh.gutter, 12),
+          child: FilledButton.icon(
+            onPressed: widget.canRecord ? _record : null,
+            style: FilledButton.styleFrom(
+              backgroundColor: Seventh.record,
+              foregroundColor: Seventh.ground,
+            ),
+            icon: const Icon(Icons.circle, size: 14),
+            label: Text(widget.canRecord ? 'Record take' : 'Connect to record'),
+          ),
+        ),
       ),
       body: takes == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+              padding: const EdgeInsets.fromLTRB(Seventh.gutter, 12, Seventh.gutter, 16),
               children: [
                 if (!widget.store.persistent)
                   const Padding(
@@ -147,15 +158,25 @@ class _TakesScreenState extends State<TakesScreen> {
                 if (_trend(takes) case final trend?) _TrendCard(trend),
                 if (takes.isEmpty)
                   const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 48),
-                    child: Text(
-                      'No takes yet.\nRecord one, then slow it down to see '
-                      'where the slide and the pitch went.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: TakeStyle.muted, height: 1.5),
+                    padding: EdgeInsets.symmetric(vertical: 56, horizontal: 12),
+                    child: Column(
+                      children: [
+                        Icon(Icons.graphic_eq, size: 36, color: Seventh.faint),
+                        SizedBox(height: 14),
+                        Text(
+                          'No takes yet.\nRecord one, then slow it down to see '
+                          'where the slide and the pitch went.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: TakeStyle.muted, height: 1.5),
+                        ),
+                      ],
                     ),
                   )
-                else
+                else ...[
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(2, 4, 2, 10),
+                    child: Text('RECENT', style: Seventh.label),
+                  ),
                   Container(
                     decoration: BoxDecoration(
                         color: TakeStyle.card,
@@ -188,6 +209,7 @@ class _TakesScreenState extends State<TakesScreen> {
                       ],
                     ),
                   ),
+                ],
               ],
             ),
     );
@@ -220,13 +242,14 @@ class _TrendCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                    '${trend.title.toUpperCase()} · LAST ${trend.avgCents.length} TAKES',
+                    '${prettyNote(trend.title).toUpperCase()} · LAST ${trend.avgCents.length}',
                     overflow: TextOverflow.ellipsis,
                     style: TakeStyle.sectionLabel),
               ),
               Text(
-                  '${change > 0 ? '+' : change < 0 ? '−' : '±'}'
-                  '${change.abs().toStringAsFixed(1)}¢ avg',
+                  better || worse
+                      ? '${change.abs().toStringAsFixed(1)}¢ ${better ? 'better' : 'worse'}'
+                      : 'steady',
                   style: TextStyle(
                       fontSize: 12,
                       color: better
@@ -336,14 +359,7 @@ class _TakeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = take.started;
-    String two(int v) => v.toString().padLeft(2, '0');
-    final now = DateTime.now();
-    final today =
-        s.year == now.year && s.month == now.month && s.day == now.day;
-    final when = today
-        ? 'Today ${two(s.hour)}:${two(s.minute)}'
-        : '${s.year}-${two(s.month)}-${two(s.day)} ${two(s.hour)}:${two(s.minute)}';
+    final when = friendlyWhen(take.started);
     return InkWell(
       onTap: onTap,
       child: Container(
