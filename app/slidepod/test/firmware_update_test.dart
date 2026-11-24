@@ -161,4 +161,33 @@ void main() {
         base: 'https://seventh.test/firmware');
     await expectLater(bad.download(b), throwsA(isA<OtaException>()));
   });
+
+  test('test firmware is offered only to pods set to it, and only if newer',
+      () async {
+    Map<String, dynamic> m(String v) => {
+          'version': v,
+          'builds': {
+            '1': {
+              'file': 'slidepod-rev1-$v.bin',
+              'size': 1,
+              'sha256': '00',
+              'signature': base64.encode([1]),
+            },
+          },
+        };
+    var beta = m('0.5.3');
+    final client = MockClient((req) async => switch (req.url.path) {
+          '/firmware/manifest.json' => http.Response(jsonEncode(m('0.5.2')), 200),
+          '/firmware/manifest-beta.json' => http.Response(jsonEncode(beta), 200),
+          _ => http.Response('', 404),
+        });
+    var c = FirmwareCatalog(client: client, base: 'https://seventh.test/firmware');
+    expect((await c.manifest())!.version, '0.5.2');
+    expect((await c.manifest(beta: true))!.version, '0.5.3');
+
+    // Once promoted, the beta is older than or the same as everyone's.
+    beta = m('0.5.1');
+    c = FirmwareCatalog(client: client, base: 'https://seventh.test/firmware');
+    expect((await c.manifest(beta: true))!.version, '0.5.2');
+  });
 }

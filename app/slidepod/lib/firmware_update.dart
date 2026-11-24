@@ -105,23 +105,34 @@ class FirmwareCatalog {
 
   static final shared = FirmwareCatalog();
 
-  Future<FirmwareManifest?>? _manifest;
+  final _manifests = <String, Future<FirmwareManifest?>>{};
 
-  /// Null if it can't be had (offline): no update is offered then, and
-  /// the next call asks again.
-  Future<FirmwareManifest?> manifest() {
-    final m = _manifest ??= _fetch();
+  /// The firmware offered to everyone, or with [beta] (the owner tests new
+  /// firmware) whichever is newer of that and the beta. Null if it can't be
+  /// had (offline): no update is offered then, and the next call asks
+  /// again.
+  Future<FirmwareManifest?> manifest({bool beta = false}) async {
+    final stable = await _get('manifest.json');
+    if (!beta) return stable;
+    final test = await _get('manifest-beta.json');
+    if (test == null) return stable;
+    if (stable == null) return test;
+    return isNewer(test.version, stable.version) ? test : stable;
+  }
+
+  Future<FirmwareManifest?> _get(String file) {
+    final m = _manifests[file] ??= _fetch(file);
     m.then((v) {
-      if (v == null && identical(_manifest, m)) _manifest = null;
+      if (v == null && identical(_manifests[file], m)) _manifests.remove(file);
     });
     return m;
   }
 
-  Future<FirmwareManifest?> _fetch() async {
+  Future<FirmwareManifest?> _fetch(String file) async {
     try {
       final res = await _http
           // A fresh copy at least every minute, whatever caches it.
-          .get(Uri.parse('$base/manifest.json'
+          .get(Uri.parse('$base/$file'
               '?t=${DateTime.now().millisecondsSinceEpoch ~/ 60000}'))
           .timeout(const Duration(seconds: 10));
       if (res.statusCode != 200) return null;
