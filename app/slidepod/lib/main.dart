@@ -597,7 +597,17 @@ class _HomePageState extends State<HomePage> {
   /// Records one take (turning the mic on for pitch and audio), titled
   /// [title] when it's another take of a piece.
   Future<Take?> _recordTake(TakeStore store, {String? title}) async {
-    if (!_micActive && !_source.isMock) await _toggleMic();
+    if (!_source.isMock) {
+      if (!_micActive) {
+        await _toggleMic();
+      } else {
+        // On, but playing a take back pauses the recorder (it loses audio
+        // focus): make sure it's hearing before recording ("Record again").
+        try {
+          await _pitchDetector.start();
+        } catch (_) {}
+      }
+    }
     if (!mounted) return null;
     return Navigator.of(context).push<Take>(MaterialPageRoute(
       fullscreenDialog: true,
@@ -973,7 +983,14 @@ class _HomePageState extends State<HomePage> {
       },
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
+        onDestinationSelected: (i) {
+          setState(() => _tab = i);
+          // Back from playing takes: the recorder paused when playback took
+          // audio focus, so the mic would look on but hear nothing.
+          if (_micActive && !_source.isMock) {
+            _pitchDetector.start().catchError((_) {});
+          }
+        },
         destinations: const [
           NavigationDestination(icon: Icon(Icons.graphic_eq), label: 'Live'),
           NavigationDestination(
