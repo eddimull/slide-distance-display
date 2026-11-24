@@ -12,8 +12,16 @@ class FirmwareUpdateScreen extends StatefulWidget {
   final SlidePodSource source;
   final FirmwareBuild build;
   final FirmwareCatalog catalog;
+
+  /// Opens calibration: new firmware can read distances differently, so
+  /// the done screen offers it.
+  final VoidCallback? onRecalibrate;
   FirmwareUpdateScreen(
-      {super.key, required this.source, required this.build, FirmwareCatalog? catalog})
+      {super.key,
+      required this.source,
+      required this.build,
+      this.onRecalibrate,
+      FirmwareCatalog? catalog})
       : catalog = catalog ?? FirmwareCatalog.shared;
 
   @override
@@ -183,6 +191,24 @@ class _FirmwareUpdateScreenState extends State<FirmwareUpdateScreen> {
                   const SizedBox(height: 8),
                   OutlinedButton(
                       onPressed: () => Navigator.pop(context), child: const Text('Close')),
+                ] else if (widget.onRecalibrate != null &&
+                    widget.source.connected) ...[
+                  const Text(
+                    'New firmware can read the slide a little differently: '
+                    'recalibrate so positions read true.',
+                    textAlign: TextAlign.center,
+                    style: Seventh.small,
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        widget.onRecalibrate!();
+                      },
+                      child: const Text('Recalibrate now')),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                      onPressed: () => Navigator.pop(context), child: const Text('Later')),
                 ] else
                   FilledButton(
                       onPressed: () => Navigator.pop(context), child: const Text('Done')),

@@ -365,22 +365,40 @@ class _HomePageState extends State<HomePage> {
   }
   int _diagTick = 0;
 
-  /// Offers calibration, once, when the real pod is connected and there is
-  /// no saved calibration (checked after it has finished loading).
+  /// The pod firmware the calibration was made on. A firmware update can
+  /// change how far readings come out (0.5.3 read 7th ~80 mm shorter than
+  /// before, and an older calibration put in-tune 7th at 6.3), so a pod on
+  /// different firmware asks for a fresh one.
+  static const _calFirmwareKey = 'slide_cal_firmware';
+
+  /// Offers calibration, once per connection, when the real pod is
+  /// connected and there's no saved calibration, or it was made on other
+  /// firmware (checked after it has finished loading).
   Future<void> _maybePromptCalibration() async {
     await _calLoaded;
-    if (!mounted ||
-        _calPrompted ||
-        _calibrating ||
-        !_connected ||
-        _source.isMock ||
-        _cal.calibrated) {
+    if (!mounted || _calPrompted || _calibrating || !_connected || _source.isMock) {
       return;
+    }
+    final String message;
+    if (!_cal.calibrated) {
+      message = 'Calibrate your slide so positions read true';
+    } else {
+      final fw = _source.pod?.firmware;
+      _prefs ??= await SharedPreferences.getInstance();
+      final calFw = _prefs!.getString(_calFirmwareKey);
+      if (fw == null) return;
+      if (calFw == null) {
+        // Made before this was kept: take it as made on this firmware.
+        await _prefs!.setString(_calFirmwareKey, fw);
+        return;
+      }
+      if (calFw == fw || !mounted) return;
+      message = 'SlidePod firmware updated: recalibrate so positions read true';
     }
     _calPrompted = true;
     _calPrompt = ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: const Text('Calibrate your slide so positions read true'),
-      duration: const Duration(seconds: 8),
+      content: Text(message),
+      duration: const Duration(seconds: 12),
       action: SnackBarAction(label: 'Calibrate', onPressed: _openCalibration),
     ));
     _calPrompt!.closed.then((_) => _calPrompt = null);
@@ -497,6 +515,8 @@ class _HomePageState extends State<HomePage> {
     if (result != null) {
       _calDirty = true;
       _saveCal();
+      final fw = _source.pod?.firmware;
+      if (fw != null) await _prefs?.setString(_calFirmwareKey, fw);
       await _syncCal();
     }
   }
@@ -731,7 +751,8 @@ class _HomePageState extends State<HomePage> {
         onUpdate: _source.isMock
             ? null
             : (b) => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => FirmwareUpdateScreen(source: _source, build: b))),
+                builder: (_) => FirmwareUpdateScreen(
+                    source: _source, build: b, onRecalibrate: _openCalibration))),
       ),
     );
     if (mounted) setState(() => _status = _podStatus());
@@ -750,6 +771,9 @@ class _HomePageState extends State<HomePage> {
     final pod = _source.pod;
     if (mounted) setState(() => _status = _podStatus());
     if (pod == null || _source.isMock) return;
+    // Now the pod's firmware is known: a calibration made on other firmware
+    // asks to be redone.
+    unawaited(_maybePromptCalibration());
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(_lastPodKey, pod.serial);
     final account = await _openAccount();
