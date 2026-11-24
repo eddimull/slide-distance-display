@@ -285,7 +285,7 @@ static volatile uint8_t g_ledR = 0, g_ledG = 0, g_ledB = 0;
 #define SLIDEPOD_OTA_DATA_UUID "d5e40008-7537-4463-a441-27f2d3140fab"
 
 // Firmware version, reported in the info characteristic.
-#define SLIDEPOD_FW "0.5.0"
+#define SLIDEPOD_FW "0.5.1"
 
 // Longest name, in UTF-8 bytes: fits the scan response (31 bytes) with room
 // to spare, and the app's lists.
