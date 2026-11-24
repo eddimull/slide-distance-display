@@ -152,13 +152,24 @@ jobs:
 
   ios:
     needs: plan
-    runs-on: macos-15
+    # App Store Connect takes only builds from the iOS 26 SDK (Xcode 26) or
+    # later; from April 2027, the iOS 27 SDK.
+    runs-on: macos-26
     environment: ${{ needs.plan.outputs.upload == 'true' && needs.plan.outputs.apple == 'true' && 'production' || '' }}
     defaults:
       run:
         working-directory: app/slidepod
     steps:
       - uses: actions/checkout@v4
+      - name: Xcode
+        run: |
+          xcodebuild -version
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "iOS SDK $sdk"
+          if [ "${sdk%%.*}" -lt 26 ]; then
+            echo "::error::iOS SDK $sdk: App Store Connect needs the iOS 26 SDK (Xcode 26) or later."
+            exit 1
+          fi
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
