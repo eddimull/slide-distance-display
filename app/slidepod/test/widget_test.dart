@@ -9,7 +9,8 @@ void main() {
     await tester.pumpWidget(const MaterialApp(
       home: HomePage(autoMock: false),
     ));
-    expect(find.text('Tap to connect'), findsOneWidget);
+    expect(find.text('Connect'), findsOneWidget); // the pod pill
+    expect(find.text('Not connected'), findsOneWidget);
   });
 
   testWidgets('no calibration prompt for the mock, only for a real pod',
@@ -33,7 +34,7 @@ void main() {
     expect(find.text('Raw'), findsNothing); // no raw data footer
 
     // Switching to Full brings the detail back, and is remembered.
-    await tester.tap(find.text('Full'));
+    await tester.tap(find.text('Detail'));
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Raw'), findsOneWidget);
     final prefs = await SharedPreferences.getInstance();
@@ -50,7 +51,7 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: HomePage(autoMock: true)));
     await tester.pump(const Duration(seconds: 2));
     // Prefs are cached across tests (an earlier one picked Full): pick Easy.
-    await tester.tap(find.text('Easy'));
+    await tester.tap(find.text('Simple'));
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byType(NavigationBar), findsOneWidget);

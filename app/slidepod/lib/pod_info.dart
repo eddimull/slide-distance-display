@@ -81,13 +81,19 @@ String? podNameProblem(String name) {
 }
 
 /// The pod's battery, from firmware 0.4: [percent] is 0–100, or null when
-/// it can't tell (no battery fitted). On USB power the cell is charging (or
-/// absent), so the level reads high; show [usb] instead of trusting it.
+/// it can't tell (no battery fitted). On USB power ([usb]) it's charging and
+/// [percent] is the pod's estimate (0.4.1 and up; 0.4.0 just reads high),
+/// until [charged].
 class PodPower {
   final int? percent;
   final bool usb;
+  final bool charged;
   final int millivolts;
-  const PodPower({required this.percent, required this.usb, required this.millivolts});
+  const PodPower(
+      {required this.percent,
+      required this.usb,
+      this.charged = false,
+      required this.millivolts});
 
   /// From the power characteristic: percent (0xFF = unknown), flags (bit 0:
   /// USB), mV (u16 LE).
@@ -96,6 +102,7 @@ class PodPower {
     return PodPower(
       percent: b[0] <= 100 ? b[0] : null,
       usb: b[1] & 1 == 1,
+      charged: b[1] & 3 == 3,
       millivolts: b[2] | (b[3] << 8),
     );
   }
@@ -103,9 +110,14 @@ class PodPower {
   /// Worth warning about: under 15 %, and not charging.
   bool get low => !usb && percent != null && percent! < 15;
 
-  /// As the app shows it: "72 %", "Charging", or "–" when unknown.
+  /// As the app shows it: "72 %", "Charging, 64 %", "Charged", or "–"
+  /// when unknown.
   String get label => usb
-      ? 'Charging'
+      ? charged
+          ? 'Charged'
+          : percent == null
+              ? 'Charging'
+              : 'Charging, $percent\u00A0%'
       : percent == null
           ? '–'
           : '$percent\u00A0%';

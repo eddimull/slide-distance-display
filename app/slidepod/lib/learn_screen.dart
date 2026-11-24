@@ -131,8 +131,13 @@ class LearnScreen extends StatefulWidget {
   final bool connected;
   final List<LearnLevel>? levels;
 
+  /// The tab's top bar (title, pod, profile). Null: a plain one with an
+  /// account button.
+  final PreferredSizeWidget? topBar;
+
   const LearnScreen({
     super.key,
+    this.topBar,
     required this.learn,
     this.connected = true,
     this.levels,
@@ -166,7 +171,7 @@ class _LearnScreenState extends State<LearnScreen> {
     final open = unlockedLevels(_levels, widget.learn.scores);
     return Scaffold(
       backgroundColor: TakeStyle.ground,
-      appBar: AppBar(
+      appBar: widget.topBar ?? AppBar(
         backgroundColor: TakeStyle.ground,
         foregroundColor: TakeStyle.text,
         automaticallyImplyLeading: false,

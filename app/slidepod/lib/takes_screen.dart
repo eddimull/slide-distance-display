@@ -24,8 +24,12 @@ class TakesScreen extends StatefulWidget {
   /// False when the pod isn't connected: recording is disabled.
   final bool canRecord;
 
+  /// The tab's top bar (title, pod, profile); a plain one if null.
+  final PreferredSizeWidget? topBar;
+
   const TakesScreen({
     super.key,
+    this.topBar,
     required this.store,
     required this.cal,
     required this.onRecord,
@@ -112,12 +116,13 @@ class _TakesScreenState extends State<TakesScreen> {
     final takes = _takes;
     return Scaffold(
       backgroundColor: TakeStyle.ground,
-      appBar: AppBar(
-        backgroundColor: TakeStyle.ground,
-        foregroundColor: TakeStyle.text,
-        title: const Text('Takes',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
-      ),
+      appBar: widget.topBar ??
+          AppBar(
+            backgroundColor: TakeStyle.ground,
+            foregroundColor: TakeStyle.text,
+            title: const Text('Takes',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
+          ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: widget.canRecord ? _record : null,
         backgroundColor:

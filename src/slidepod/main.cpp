@@ -283,7 +283,7 @@ static volatile uint8_t g_ledR = 0, g_ledG = 0, g_ledB = 0;
 #define SLIDEPOD_POWER_UUID "d5e40006-7537-4463-a441-27f2d3140fab"
 
 // Firmware version, reported in the info characteristic.
-#define SLIDEPOD_FW "0.4.0"
+#define SLIDEPOD_FW "0.4.1"
 
 // Longest name, in UTF-8 bytes: fits the scan response (31 bytes) with room
 // to spare, and the app's lists.
@@ -543,13 +543,22 @@ static void setRgb(bool r, bool g, bool b) {
 }
 
 // ── Battery ─────────────────────────────────────────────────────────────
-// 1S LiPo, read through a 1M/1M divider every 2 s and smoothed. The charge
-// level comes from the resting-voltage curve, so on USB (charging, or no
-// battery fitted) it reads high: the app shows "charging" then.
+// 1S LiPo, read through a 1M/1M divider every 2 s and smoothed. Off USB the
+// level comes from the resting-voltage curve. On USB it's an estimate: the
+// charger's STAT pin isn't wired to us, and charging lifts the voltage.
+//  - constant current (~300 mA, below 4.18 V): the cell reads about
+//    CHARGE_LIFT_MV high, so take that off before the curve.
+//  - constant voltage (held at 4.2 V while the current tapers): the voltage
+//    says nothing more, so ramp from there to 100 % over CV_MINUTES, then
+//    call it full.
 static constexpr uint8_t BATTERY_UNKNOWN = 0xFF;
 static uint8_t g_batteryPct = BATTERY_UNKNOWN;
 static uint16_t g_batteryMv = 0;
 static bool g_usbPower = false;
+static bool g_charged = false;  // on USB, and (by the estimate) full
+static constexpr float CHARGE_LIFT_MV = 120;
+static constexpr float CV_ENTRY_MV = 4180;
+static constexpr float CV_MINUTES = 40;
 
 // Percent for a resting cell voltage (mV), from a typical LiPo curve.
 static uint8_t lipo_percent(float mv) {
@@ -581,9 +590,36 @@ static bool battery_update() {
   const float mv = 2.0f * sum / 16;  // undo the 1M/1M divider
   smooth = smooth == 0 ? mv : smooth + 0.2f * (mv - smooth);
   const bool usb = analogReadMilliVolts(PIN_VBUS_SENSE) > 1500;  // 2.5 V on USB
-  // Below 2.5 V there's no cell (or a dead one behind its protection).
-  const uint8_t pct = smooth < 2500 ? BATTERY_UNKNOWN : lipo_percent(smooth);
-  const bool changed = pct != g_batteryPct || usb != g_usbPower;
+  static uint32_t cvSince = 0;  // when charging reached constant voltage
+  static uint8_t cvFrom = 0;    // the estimate then
+  uint8_t pct;
+  bool charged = false;
+  if (smooth < 2500) {
+    // No cell (or a dead one behind its protection).
+    pct = BATTERY_UNKNOWN;
+    cvSince = 0;
+  } else if (!usb) {
+    pct = lipo_percent(smooth);
+    cvSince = 0;
+  } else if (smooth < CV_ENTRY_MV) {
+    pct = lipo_percent(smooth - CHARGE_LIFT_MV);
+    cvSince = 0;
+  } else {
+    if (!cvSince) {
+      cvSince = millis() | 1;
+      cvFrom = lipo_percent(CV_ENTRY_MV - CHARGE_LIFT_MV);
+    }
+    const float mins = (millis() - cvSince) / 60000.0f;
+    pct = (uint8_t)min(100.0f, cvFrom + (100 - cvFrom) * mins / CV_MINUTES + 0.5f);
+    charged = mins >= CV_MINUTES;
+  }
+  // The estimate only rises while charging (the voltage jitters).
+  if (usb && g_usbPower && pct != BATTERY_UNKNOWN && g_batteryPct != BATTERY_UNKNOWN &&
+      pct < g_batteryPct)
+    pct = g_batteryPct;
+  const bool changed =
+      pct != g_batteryPct || usb != g_usbPower || charged != g_charged;
+  g_charged = charged;
   g_batteryPct = pct;
   g_batteryMv = (uint16_t)smooth;
   g_usbPower = usb;
@@ -594,11 +630,12 @@ static bool battery_update() { return false; }
 #endif
 
 #if !defined(WOKWI_SIM) && !defined(SLIDEPOD_NO_BLE)
-// 4 bytes: percent (0–100, 0xFF = unknown), flags (bit 0: on USB power),
-// battery mV (u16 LE).
+// 4 bytes: percent (0–100, 0xFF = unknown; on USB, an estimate), flags
+// (bit 0: on USB power, bit 1: charged), battery mV (u16 LE).
 static void ble_power(bool notify) {
   if (!powerChr) return;
-  const uint8_t v[4] = {g_batteryPct, (uint8_t)(g_usbPower ? 1 : 0),
+  const uint8_t v[4] = {g_batteryPct,
+                        (uint8_t)((g_usbPower ? 1 : 0) | (g_charged ? 2 : 0)),
                         (uint8_t)g_batteryMv, (uint8_t)(g_batteryMv >> 8)};
   powerChr->setValue(v, sizeof v);
   if (notify && powerChr->getSubscribedCount()) powerChr->notify();
