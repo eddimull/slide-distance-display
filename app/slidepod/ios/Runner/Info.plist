@@ -47,6 +47,8 @@
 			</array>
 		</dict>
 	</dict>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Seventh uses Bluetooth to connect to your SlidePod, the sensor on your trombone slide.</string>
 	<key>NSMicrophoneUsageDescription</key>
