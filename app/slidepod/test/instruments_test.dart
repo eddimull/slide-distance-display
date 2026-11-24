@@ -14,7 +14,7 @@ Map<String, dynamic> horn({int id = 3, Map<String, dynamic>? cal, String? at, in
       'pod_id': podId,
       'has_calibration': cal != null,
       'calibration_updated_at': at,
-      if (cal != null) 'calibration': cal,
+      'calibration': ?cal,
     };
 
 const phoneCal = {'v': 3, 'from': 'phone'};
