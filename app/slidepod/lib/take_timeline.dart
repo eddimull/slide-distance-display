@@ -351,7 +351,7 @@ class _TimelinePainter extends CustomPainter {
         (s) => s * pxPerSec >= 44,
         orElse: () => 120);
     for (var s = 0; s <= secs; s += step) {
-      _text(canvas, s == 0 ? '0s' : '$s', Offset(x(s * 1000), axisY - 8), mono,
+      _text(canvas, s == 0 ? '0 s' : '$s', Offset(x(s * 1000), axisY - 8), mono,
           align: TextAlign.center);
     }
 

@@ -13,6 +13,8 @@ import 'take_analysis.dart';
 import 'take_export.dart';
 import 'take_store.dart';
 import 'take_style.dart';
+import 'ui/seventh.dart';
+import 'ui/when.dart';
 import 'take_timeline.dart';
 
 /// One take, analysed: the timeline, playback at any speed from 0.1× to
@@ -271,9 +273,7 @@ class _ReviewScreenState extends State<ReviewScreen>
   Widget build(BuildContext context) {
     final take = widget.take;
     final started = take.started;
-    String two(int v) => v.toString().padLeft(2, '0');
-    final when = '${started.year}-${two(started.month)}-${two(started.day)} '
-        '${two(started.hour)}:${two(started.minute)}';
+    final when = friendlyWhen(started);
 
     return Scaffold(
       backgroundColor: TakeStyle.ground,
@@ -536,39 +536,66 @@ class _ReviewScreenState extends State<ReviewScreen>
   }
 
   Widget _speedControl() {
-    const range = ReviewScreen.maxSpeed - ReviewScreen.minSpeed;
+    bool on(double p) => (_speed - p).abs() < 0.001;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Row(
-          children: [
-            Expanded(
-              child: Text('PLAYBACK SPEED',
-                  style: TakeStyle.sectionLabel,
-                  overflow: TextOverflow.ellipsis),
-            ),
-            Text('Pitch preserved',
-                style: TextStyle(fontSize: 11, color: TakeStyle.muted)),
-          ],
-        ),
-        const SizedBox(height: 4),
         Row(
           children: [
-            IconButton.outlined(
+            const Expanded(
+              child: Text('SPEED · PITCH KEPT',
+                  style: Seventh.label, overflow: TextOverflow.ellipsis),
+            ),
+            Text('${_speed.toStringAsFixed(2)}×',
+                style: Seventh.mono.copyWith(
+                    fontSize: 15, fontWeight: FontWeight.w600, color: Seventh.text)),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            IconButton(
               tooltip: 'Slower',
               onPressed: _speed > ReviewScreen.minSpeed + 0.001
                   ? () => _setSpeed(_speed - ReviewScreen.speedStep)
                   : null,
               icon: const Icon(Icons.remove),
             ),
+            // The presets, as the one segmented control.
             Expanded(
-              child: Text('${_speed.toStringAsFixed(2)}×',
-                  textAlign: TextAlign.center,
-                  style: TakeStyle.mono.copyWith(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w500,
-                      color: TakeStyle.text)),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                    color: Seventh.raised, borderRadius: BorderRadius.circular(12)),
+                child: Row(
+                  children: [
+                    for (final p in ReviewScreen.presets)
+                      Expanded(
+                        child: Material(
+                          color: on(p) ? Seventh.line : Colors.transparent,
+                          borderRadius: BorderRadius.circular(9),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(9),
+                            onTap: () => _setSpeed(p),
+                            child: SizedBox(
+                              height: 36,
+                              child: Center(
+                                child: Text(
+                                    '${p == p.roundToDouble() ? p.toInt() : p}×',
+                                    style: Seventh.mono.copyWith(
+                                        fontSize: 12,
+                                        fontWeight: on(p) ? FontWeight.w600 : FontWeight.w400,
+                                        color: on(p) ? Seventh.text : Seventh.muted)),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
-            IconButton.outlined(
+            IconButton(
               tooltip: 'Faster',
               onPressed: _speed < ReviewScreen.maxSpeed - 0.001
                   ? () => _setSpeed(_speed + ReviewScreen.speedStep)
@@ -577,56 +604,6 @@ class _ReviewScreenState extends State<ReviewScreen>
             ),
           ],
         ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            activeTrackColor: TakeStyle.accent,
-            inactiveTrackColor: TakeStyle.line,
-            thumbColor: TakeStyle.accent,
-            showValueIndicator: ShowValueIndicator.never,
-          ),
-          child: Slider(
-            value: _speed,
-            min: ReviewScreen.minSpeed,
-            max: ReviewScreen.maxSpeed,
-            divisions: (range / ReviewScreen.speedStep).round(),
-            label: '${_speed.toStringAsFixed(2)}×',
-            onChanged: _setSpeed,
-          ),
-        ),
-        LayoutBuilder(builder: (context, box) {
-          // Presets sit under their spot on the slider (24 px track inset).
-          const inset = 24.0;
-          final track = box.maxWidth - 2 * inset;
-          return SizedBox(
-            height: 36,
-            child: Stack(
-              children: [
-                for (final p in ReviewScreen.presets)
-                  Positioned(
-                    left: inset +
-                        track * (p - ReviewScreen.minSpeed) / range -
-                        26,
-                    width: 52,
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(52, 36),
-                        foregroundColor: (_speed - p).abs() < 0.001
-                            ? TakeStyle.accent
-                            : TakeStyle.muted,
-                        backgroundColor: (_speed - p).abs() < 0.001
-                            ? const Color(0xFF1E2A3A)
-                            : null,
-                      ),
-                      onPressed: () => _setSpeed(p),
-                      child: Text('$p×',
-                          style: TakeStyle.mono.copyWith(fontSize: 12)),
-                    ),
-                  ),
-              ],
-            ),
-          );
-        }),
       ],
     );
   }
@@ -685,7 +662,7 @@ class _ReviewScreenState extends State<ReviewScreen>
               ),
               SizedBox(
                 width: 54,
-                child: Text('${s.durationMs}ms',
+                child: Text('${s.durationMs}\u00A0ms',
                     textAlign: TextAlign.right,
                     style: TakeStyle.mono
                         .copyWith(fontSize: 13, color: TakeStyle.text)),

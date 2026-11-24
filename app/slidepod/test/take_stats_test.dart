@@ -78,7 +78,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         home: TakesScreen(store: store, cal: cal, onRecord: ({title}) async => null)));
     await tester.pumpAndSettle();
-    expect(find.text('SCALE · LAST 3 TAKES'), findsOneWidget);
+    expect(find.text('SCALE · LAST 3'), findsOneWidget);
     final inTune = synthScale().inTuneCount;
     expect(find.text('$inTune/8'), findsNWidgets(3));
   });
