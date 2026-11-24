@@ -85,7 +85,7 @@ void main() {
         ),
       ));
       expect(find.text('Position Flash'), findsOneWidget);
-      expect(find.text('10800'), findsOneWidget); // high score
+      expect(find.text('10,800'), findsOneWidget); // best score
       expect(find.text('Score 15,000 in Position Flash to unlock'), findsOneWidget);
       expect(find.text('10,800 / 15,000'), findsOneWidget);
       expect(find.text('Unlocks from Level 2'), findsNothing);
@@ -159,7 +159,7 @@ void main() {
     expect(find.text('×4'), findsWidgets);
     final best = scores.best(FlashCardScreen.gameId)!;
     expect(best.detail, matches(RegExp(r'^\d+ found · combo \d+')));
-    expect(find.text('${best.score}'), findsOneWidget);
+    expect(find.text(thousands(best.score)), findsOneWidget);
 
     await tester.tap(find.text('High scores'));
     await tester.pumpAndSettle();

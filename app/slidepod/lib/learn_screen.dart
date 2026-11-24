@@ -8,6 +8,7 @@ import 'high_scores.dart';
 import 'high_scores_screen.dart';
 import 'slide_calibration.dart';
 import 'take_style.dart';
+import 'ui/seventh.dart';
 
 /// What a game gets from the app.
 class LearnContext {
@@ -20,12 +21,16 @@ class LearnContext {
 
   /// Turns the mic on, for the levels that need playing.
   final Future<void> Function()? ensureMic;
+
+  /// The compact pod pill, for a round's header.
+  final WidgetBuilder? pod;
   const LearnContext(
       {required this.frames,
       required this.cal,
       required this.scores,
       this.account,
-      this.ensureMic});
+      this.ensureMic,
+      this.pod});
 }
 
 /// A level opens once the best score in [gameId] reaches [score].
@@ -74,7 +79,11 @@ final learnLevels = <LearnLevel>[
     blurb: 'A position number comes up: put the slide there and hold it. '
         'Faster scores more.',
     build: (c) => FlashCardScreen(
-        frames: c.frames, cal: c.cal, scores: c.scores, account: c.account),
+        frames: c.frames,
+        cal: c.cal,
+        scores: c.scores,
+        account: c.account,
+        pod: c.pod),
   ),
   LearnLevel(
     level: 2,
@@ -89,6 +98,7 @@ final learnLevels = <LearnLevel>[
         cal: c.cal,
         scores: c.scores,
         account: c.account,
+        pod: c.pod,
         spec: noteFlash),
   ),
   LearnLevel(
@@ -106,6 +116,7 @@ final learnLevels = <LearnLevel>[
         scores: c.scores,
         account: c.account,
         spec: playTheNote,
+        pod: c.pod,
         ensureMic: c.ensureMic),
   ),
 ];
@@ -238,24 +249,11 @@ class _LearnScreenState extends State<LearnScreen> {
                     '${l.levelName == null ? '' : ' · ${l.levelName!.toUpperCase()}'}',
                     style: TakeStyle.sectionLabel),
               ),
-              if (!l.needsPlaying)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                      color: const Color(0xFF1E2A3A),
-                      borderRadius: BorderRadius.circular(6)),
-                  child: const Text('No playing',
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF90CAF9))),
-                ),
+              if (!l.needsPlaying) const SeventhTag('No playing'),
             ],
           ),
           const SizedBox(height: 6),
-          Text(l.title,
-              style: const TextStyle(
-                  fontSize: 22, fontWeight: FontWeight.w600, color: TakeStyle.text)),
+          Text(l.title, style: Seventh.screenTitle.copyWith(fontSize: 22)),
           const SizedBox(height: 6),
           Text(l.blurb,
               style: const TextStyle(fontSize: 14, height: 1.45, color: TakeStyle.body)),
@@ -266,9 +264,9 @@ class _LearnScreenState extends State<LearnScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('High score',
+                    const Text('Best',
                         style: TextStyle(fontSize: 11, color: TakeStyle.muted)),
-                    Text(best == null ? '–' : '${best.score}',
+                    Text(best == null ? '–' : _thousands(best.score),
                         style: TakeStyle.mono.copyWith(
                             fontSize: 20,
                             fontWeight: FontWeight.w600,
@@ -282,13 +280,7 @@ class _LearnScreenState extends State<LearnScreen> {
               ),
               const SizedBox(width: 4),
               FilledButton(
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(88, 44),
-                  backgroundColor: TakeStyle.accent,
-                  foregroundColor: TakeStyle.onAccent,
-                  textStyle:
-                      const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                ),
+                style: FilledButton.styleFrom(minimumSize: const Size(96, 48)),
                 onPressed: widget.connected ? () => _play(l) : null,
                 child: const Text('Play'),
               ),
@@ -314,7 +306,7 @@ class _LearnScreenState extends State<LearnScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF14171C),
+        color: Seventh.ground,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: TakeStyle.line),
       ),
@@ -330,8 +322,8 @@ class _LearnScreenState extends State<LearnScreen> {
               children: [
                 Text('LEVEL ${l.level}', style: TakeStyle.sectionLabel),
                 Text(l.title,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w500, color: TakeStyle.body)),
+                    style: Seventh.screenTitle
+                        .copyWith(fontSize: 18, color: TakeStyle.body)),
                 const SizedBox(height: 2),
                 Text(
                     [if (l.needsPlaying) 'Needs playing: pitch and slide.', need]

@@ -13,6 +13,7 @@ import 'seventh_api.dart';
 import 'slide_calibration.dart';
 import 'staff_note.dart';
 import 'take_style.dart';
+import 'ui/seventh.dart';
 
 /// One flash-card game: what its cards are and how it's explained.
 class FlashGameSpec {
@@ -118,6 +119,9 @@ class FlashCardScreen extends StatefulWidget {
   final Future<void> Function()? ensureMic;
   final FlashGameSpec spec;
 
+  /// The compact pod pill, shown during a round (null: none).
+  final WidgetBuilder? pod;
+
   /// For tests: the round's random cards, and the clock (ms).
   final math.Random? rng;
   final int Function()? clock;
@@ -131,6 +135,7 @@ class FlashCardScreen extends StatefulWidget {
     this.rules,
     this.ensureMic,
     this.spec = positionFlash,
+    this.pod,
     this.rng,
     this.clock,
   });
@@ -181,16 +186,19 @@ class MultBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (bg, fg) = multColor(mult);
+    // No `alignment`: that makes a Container fill a Wrap's whole width.
     return Container(
       height: height,
       constraints: BoxConstraints(minWidth: height * 1.4),
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      alignment: Alignment.center,
       decoration: BoxDecoration(
           color: bg, borderRadius: BorderRadius.circular(height / 2)),
-      child: Text('×$mult',
+      child: Center(
+        widthFactor: 1,
+        child: Text('×$mult',
           style: TakeStyle.mono.copyWith(
               fontSize: height * 0.5, fontWeight: FontWeight.w600, color: fg)),
+      ),
     );
   }
 }
@@ -350,6 +358,11 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                     color: TakeStyle.text)),
         actions: [
           if (_playing) ...[
+            // The pod, so a dying battery shows mid-round.
+            if (widget.pod != null) ...[
+              widget.pod!(context),
+              const SizedBox(width: 10),
+            ],
             _ComboPips(_round.combo, _round.multiplier, _r.comboStep, _r.maxMultiplier),
             const SizedBox(width: 8),
             Semantics(
@@ -358,7 +371,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
             const SizedBox(width: 10),
             ConstrainedBox(
               constraints: const BoxConstraints(minWidth: 64),
-              child: Text('${_round.score}',
+              child: Text(thousands(_round.score),
                   textAlign: TextAlign.right,
                   style: TakeStyle.mono.copyWith(
                       fontSize: 20,
@@ -571,7 +584,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
             const Text('High score',
                 style: TextStyle(fontSize: 13, color: TakeStyle.muted)),
             const Spacer(),
-            Text(best == null ? '–' : '${best.score}',
+            Text(best == null ? '–' : thousands(best.score),
                 style: TakeStyle.mono.copyWith(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -620,6 +633,10 @@ class _FlashCardScreenState extends State<FlashCardScreen>
     final ring = widget.spec.notes ? 270.0 : 240.0;
     final last = feedback ? _round.results.last : null;
     final at = _semis == null ? null : (1 + _semis!.round()).clamp(1, 7);
+    // Position Flash: the card is one position, shown in its colour.
+    final int? target =
+        widget.spec.notes || card.positions.length != 1 ? null : card.positions.first;
+    final targetColor = target == null ? TakeStyle.accent : Seventh.position(target);
     String detail = '';
     if (last != null) {
       final parts = [
@@ -661,7 +678,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                       backgroundColor: TakeStyle.card,
                       color: feedback
                           ? (last!.hit ? TakeStyle.good : TakeStyle.bad)
-                          : TakeStyle.accent,
+                          : targetColor,
                     ),
                   ),
                   Column(
@@ -678,11 +695,12 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                       ] else
                         Text(card.label,
                             semanticsLabel: 'Position ${card.label}',
-                            style: const TextStyle(
+                            style: Seventh.mono.copyWith(
                                 fontSize: 140,
-                                fontWeight: FontWeight.w300,
+                                fontWeight: FontWeight.w600,
                                 height: 1,
-                                color: TakeStyle.text)),
+                                letterSpacing: -4,
+                                color: target == null ? TakeStyle.text : targetColor)),
                       SizedBox(
                         height: 24,
                         child: last == null
@@ -738,16 +756,32 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                     height: 40,
                     margin: const EdgeInsets.symmetric(horizontal: 3),
                     alignment: Alignment.center,
+                    // The target filled in its colour; each other position
+                    // underlined in its own; where the slide is, outlined.
                     decoration: BoxDecoration(
-                      color: at == p ? TakeStyle.chip : TakeStyle.card,
-                      borderRadius: BorderRadius.circular(8),
+                      color: target == p ? Seventh.position(p) : TakeStyle.card,
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                          color: at == p ? TakeStyle.body : Colors.transparent),
+                          color: at == p ? TakeStyle.text : Colors.transparent,
+                          width: 1.5),
                     ),
+                    foregroundDecoration: target == p
+                        ? null
+                        : BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border(
+                                bottom: BorderSide(
+                                    color: Seventh.position(p).withValues(alpha: 0.4),
+                                    width: 3))),
                     child: Text('$p',
                         style: TakeStyle.mono.copyWith(
-                            fontSize: 14,
-                            color: at == p ? TakeStyle.text : TakeStyle.muted)),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: target == p
+                                ? Seventh.ground
+                                : at == p
+                                    ? TakeStyle.text
+                                    : TakeStyle.muted)),
                   ),
                 ),
             ],
@@ -874,10 +908,14 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                   style: const TextStyle(fontSize: 14, color: TakeStyle.muted)),
         ),
         const SizedBox(height: 6),
-        Text('${_round.score}',
+        Text(thousands(_round.score),
+            semanticsLabel: '${_round.score}',
             textAlign: TextAlign.center,
             style: TakeStyle.mono.copyWith(
-                fontSize: 72, fontWeight: FontWeight.w500, color: TakeStyle.text)),
+                fontSize: 72,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -2,
+                color: TakeStyle.text)),
         if (newBest && beat != null && beat > 0)
           Text('$beat more than your last best',
               textAlign: TextAlign.center,
@@ -942,18 +980,22 @@ class _FlashCardScreenState extends State<FlashCardScreen>
             for (final c in _round.results)
               Container(
                 decoration: BoxDecoration(
-                  color: c.hit ? TakeStyle.card : const Color(0xFF2A1A1A),
+                  color: c.hit ? TakeStyle.card : Seventh.offBg,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(prettyNote(c.card.label),
-                        style: TextStyle(
-                            fontSize: widget.spec.notes ? 15 : 20,
-                            fontWeight:
-                                widget.spec.notes ? FontWeight.w500 : FontWeight.w400,
-                            color: c.hit ? TakeStyle.body : const Color(0xFFEF9A9A))),
+                    if (!widget.spec.notes && c.card.positions.length == 1)
+                      _CardChip(c.card.positions.first, hit: c.hit)
+                    else
+                      Text(prettyNote(c.card.label),
+                          style: TextStyle(
+                              fontSize: widget.spec.notes ? 15 : 20,
+                              fontWeight:
+                                  widget.spec.notes ? FontWeight.w500 : FontWeight.w400,
+                              color: c.hit ? TakeStyle.body : Seventh.off)),
+                    const SizedBox(height: 3),
                     if (widget.spec.notes && c.hit)
                       Text(ordinalPos(c.position!),
                           style: TakeStyle.mono.copyWith(
@@ -1071,6 +1113,41 @@ class _FlashCardScreenState extends State<FlashCardScreen>
 }
 
 /// Dots filling toward the next multiplier; all lit at the top.
+/// A card's position as a numbered chip in its colour; an outline if missed.
+class _CardChip extends StatelessWidget {
+  final int position;
+  final bool hit;
+  const _CardChip(this.position, {required this.hit});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 26,
+        height: 26,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: hit ? Seventh.position(position) : null,
+          border: hit ? null : Border.all(color: Seventh.off, width: 2),
+        ),
+        child: Text('$position',
+            style: Seventh.mono.copyWith(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: hit ? Seventh.ground : Seventh.off)),
+      );
+}
+
+/// 18240 → "18,240".
+String thousands(int n) {
+  final s = n.abs().toString();
+  final b = StringBuffer(n < 0 ? '−' : '');
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) b.write(',');
+    b.write(s[i]);
+  }
+  return b.toString();
+}
+
 class _ComboPips extends StatelessWidget {
   final int combo, mult, step, max;
   const _ComboPips(this.combo, this.mult, this.step, this.max);
