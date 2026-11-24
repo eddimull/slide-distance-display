@@ -285,7 +285,7 @@ static volatile uint8_t g_ledR = 0, g_ledG = 0, g_ledB = 0;
 #define SLIDEPOD_OTA_DATA_UUID "d5e40008-7537-4463-a441-27f2d3140fab"
 
 // Firmware version, reported in the info characteristic.
-#define SLIDEPOD_FW "0.5.1"
+#define SLIDEPOD_FW "0.5.2"
 
 // Longest name, in UTF-8 bytes: fits the scan response (31 bytes) with room
 // to spare, and the app's lists.
@@ -296,6 +296,7 @@ static constexpr size_t POD_NAME_MAX = 20;
 #include <mbedtls/pk.h>
 #include <mbedtls/sha256.h>
 #include <freertos/stream_buffer.h>
+#include <esp_ota_ops.h>
 #include "ota_key.h"
 
 static char g_serial[13];          // e.g. "7CDFA1E23F2A"
@@ -574,6 +575,28 @@ static OtaDataWrite otaDataCb;
 
 static bool ota_busy() { return g_otaActive; }
 
+// ── Rollback ────────────────────────────────────────────────────────────
+// After an update the bootloader starts the new firmware on probation: if
+// it resets before saying it works, the bootloader goes back to the
+// previous one. The Arduino core says so at once unless this returns true;
+// we say so once BLE is up and it has run CONFIRM_MS (see ota_confirm).
+bool verifyRollbackLater() { return true; }
+
+static constexpr uint32_t CONFIRM_MS = 15000;
+
+static void ota_confirm() {
+  static bool done = false;
+  if (done || millis() < CONFIRM_MS) return;
+  done = true;
+  esp_ota_img_states_t state;
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  if (esp_ota_get_state_partition(running, &state) == ESP_OK &&
+      state == ESP_OTA_IMG_PENDING_VERIFY) {
+    esp_ota_mark_app_valid_cancel_rollback();
+    Serial.println("# firmware confirmed after an update");
+  }
+}
+
 // The pod's loop: a failure the writer task flagged, and the reboot.
 static void ota_poll() {
   if (g_otaActive && g_otaFailed) ota_fail(g_otaFailed);
@@ -735,6 +758,7 @@ static void ble_init() {}
 static void ble_keep_fast() {}
 static bool ota_busy() { return false; }
 static void ota_poll() {}
+static void ota_confirm() {}
 static void ble_notify(uint16_t, uint16_t, uint16_t, uint16_t) {}
 #endif
 
@@ -905,6 +929,11 @@ void setup() {
 
   piezo_init();
   ble_init();
+#ifdef SLIDEPOD_CRASH_TEST
+  // Tests rollback: a firmware that dies once BLE is up.
+  delay(2000);
+  abort();
+#endif
   battery_update();
   ble_power(false);
   Serial.printf("# battery %u mV, %u%%, usb=%d\n", g_batteryMv, g_batteryPct, g_usbPower);
@@ -928,6 +957,7 @@ void loop() {
 
   ble_keep_fast();
   ota_poll();
+  ota_confirm();
   if (battery_update()) {
     ble_power(true);
     Serial.printf("# battery %u mV, %u%%, usb=%d\n", g_batteryMv, g_batteryPct, g_usbPower);

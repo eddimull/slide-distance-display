@@ -38,7 +38,18 @@ jobs:
           path: ~/.platformio
           key: platformio-${{ hashFiles('platformio.ini') }}
       - run: pip install platformio
-      - run: pio run -e slidepod -e slidepod-rev2 -e slidepod-sim
+      - name: Build
+        run: pio run -e slidepod -e slidepod-rev2 -e slidepod-sim | tee build.log
+      # The pods run what's tested on them: Arduino core 2.0.14 with NimBLE
+      # 1.4.3. Built on core 3.x, NimBLE 1.4 corrupts the heap at boot and
+      # the pod boot-loops (0.5.0 and 0.5.1 did). Fail rather than publish
+      # a build on anything else.
+      - name: Check the toolchain
+        run: |
+          grep -q 'framework-arduinoespressif32 @ 3.20014.231204 (2.0.14)' build.log ||
+            { echo "::error::Not built on Arduino core 2.0.14; see platformio.ini."; exit 1; }
+          grep -q 'NimBLE-Arduino @ 1.4.3' build.log ||
+            { echo "::error::Not built with NimBLE-Arduino 1.4.3."; exit 1; }
       - id: version
         run: |
           v=$(grep -oP '#define SLIDEPOD_FW "\K[^"]+' src/slidepod/main.cpp)
