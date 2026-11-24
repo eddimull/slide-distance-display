@@ -63,17 +63,24 @@ Future<ShareResult> shareTake(TakeAnalysis a, TakeStore? store,
   final name = exportName(take);
   final files = <XFile>[
     XFile.fromData(Uint8List.fromList(utf8.encode(takeCsv(a))),
-        name: '$name.csv', mimeType: 'text/csv'),
+        mimeType: 'text/csv'),
     XFile.fromData(Uint8List.fromList(utf8.encode(take.toJson())),
-        name: '$name.take.json', mimeType: 'application/json'),
+        mimeType: 'application/json'),
   ];
+  // The names go in fileNameOverrides, not XFile's name: off the web an
+  // XFile's name comes from its path, so one made from data has none, and
+  // share_plus then wrote to a folder ("Is a directory").
+  final names = ['$name.csv', '$name.take.json'];
   final audio = await store?.audioPath(take);
   if (audio != null) {
-    files.insert(0, XFile(audio, name: '$name.wav', mimeType: 'audio/wav'));
+    // From memory too, so it's shared under the take's name, not its id
+    // (share_plus renames only files without a path). ~32 KB a second.
+    files.insert(0, XFile.fromData(await XFile(audio).readAsBytes(), mimeType: 'audio/wav'));
+    names.insert(0, '$name.wav');
   }
   return SharePlus.instance.share(ShareParams(
     files: files,
-    fileNameOverrides: [for (final x in files) x.name],
+    fileNameOverrides: names,
     subject: take.title,
     text: '${take.title}: ${a.inTuneCount}/${a.notes.length} notes in tune, '
         '${a.cleanShifts}/${a.shifts.length} clean slide moves.',
