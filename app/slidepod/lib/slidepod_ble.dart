@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+import 'firmware_update.dart';
 import 'pod_info.dart';
 
 class SlideData {
@@ -77,6 +78,14 @@ abstract class SlidePodSource {
   /// null otherwise).
   PodPower? get power;
   Stream<PodPower?> get powerStream;
+
+  /// Sends [image] (the [build] for this pod) and has the pod install it;
+  /// it reboots into it, so the link drops. Throws [OtaException].
+  Future<void> updateFirmware(Uint8List image, FirmwareBuild build,
+      {void Function(double)? onProgress});
+
+  /// Connects again to the last pod (after an update's reboot).
+  Future<bool> reconnect();
   void dispose();
 }
 
@@ -128,6 +137,17 @@ class SlidePodMock implements SlidePodSource {
 
   @override
   Future<void> blink() async {}
+
+  @override
+  Future<void> updateFirmware(Uint8List image, FirmwareBuild build,
+          {void Function(double)? onProgress}) =>
+      throw const OtaException('Mock pods have no firmware.');
+
+  @override
+  Future<bool> reconnect() async {
+    await connectFirst();
+    return true;
+  }
 
   @override
   PodPower? get power => _connected
@@ -227,6 +247,9 @@ class SlidePodBle implements SlidePodSource {
   static final _nameUuid = Guid("d5e40004-7537-4463-a441-27f2d3140fab");
   static final _infoUuid = Guid("d5e40005-7537-4463-a441-27f2d3140fab");
   static final _powerUuid = Guid("d5e40006-7537-4463-a441-27f2d3140fab");
+  static final _otaCtrlUuid = Guid("d5e40007-7537-4463-a441-27f2d3140fab");
+  static final _otaDataUuid = Guid("d5e40008-7537-4463-a441-27f2d3140fab");
+  BluetoothCharacteristic? _otaCtrl, _otaData;
   PodPower? _power;
   StreamSubscription? _powerSub;
   final _powerController = StreamController<PodPower?>.broadcast();
@@ -371,6 +394,8 @@ class SlidePodBle implements SlidePodSource {
 
     _ledChr = null;
     _nameChr = null;
+    _otaCtrl = null;
+    _otaData = null;
     _pod = null;
     for (final svc in services) {
       if (svc.serviceUuid != _svcUuid) continue;
@@ -380,6 +405,8 @@ class SlidePodBle implements SlidePodSource {
         if (chr.characteristicUuid == _nameUuid) _nameChr = chr;
         if (chr.characteristicUuid == _infoUuid) infoChr = chr;
         if (chr.characteristicUuid == _powerUuid) powerChr = chr;
+        if (chr.characteristicUuid == _otaCtrlUuid) _otaCtrl = chr;
+        if (chr.characteristicUuid == _otaDataUuid) _otaData = chr;
       }
       await _readIdentity(infoChr);
       await _watchPower(powerChr);
@@ -448,6 +475,45 @@ class SlidePodBle implements SlidePodSource {
   Future<void> blink() => blinkLed(setLed);
 
   @override
+  Future<void> updateFirmware(Uint8List image, FirmwareBuild build,
+      {void Function(double)? onProgress}) async {
+    final ctrl = _otaCtrl, data = _otaData, device = _device;
+    if (device == null || !_connected) {
+      throw const OtaException('Connect to the SlidePod first.');
+    }
+    if (ctrl == null || data == null) {
+      throw const OtaException(
+          'This SlidePod needs a USB update once before it can update over Bluetooth.');
+    }
+    await ctrl.setNotifyValue(true);
+    await runOta(
+      _BleOtaLink(ctrl, data,
+          // The browser doesn't say the MTU; 240 fits Chrome's usual 247+.
+          kIsWeb ? 240 : (device.mtuNow - 3 - 4).clamp(16, 500)),
+      image,
+      build,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  Future<bool> reconnect() async {
+    final device = _device;
+    if (device == null) return false;
+    // The pod takes a few seconds to boot the new firmware.
+    for (var i = 0; i < 6; i++) {
+      await Future<void>.delayed(const Duration(seconds: 3));
+      try {
+        await connect(device);
+        return true;
+      } catch (_) {
+        // Not back yet.
+      }
+    }
+    return false;
+  }
+
+  @override
   Future<void> setLed((int, int, int)? rgb) async {
     final chr = _ledChr;
     if (chr == null || !_connected) return;
@@ -475,4 +541,18 @@ class SlidePodBle implements SlidePodSource {
     _connectionController.close();
     _powerController.close();
   }
+}
+
+class _BleOtaLink implements OtaLink {
+  final BluetoothCharacteristic ctrl, dataChr;
+  @override
+  final int chunk;
+  _BleOtaLink(this.ctrl, this.dataChr, this.chunk);
+
+  @override
+  Future<void> control(List<int> bytes) => ctrl.write(bytes);
+  @override
+  Future<void> data(List<int> bytes) => dataChr.write(bytes, withoutResponse: true);
+  @override
+  Stream<List<int>> get events => ctrl.onValueReceived;
 }

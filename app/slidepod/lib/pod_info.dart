@@ -7,11 +7,15 @@ class PodInfo {
   final String name;
   final String? firmware;
   final int? hardware;
+
+  /// Takes firmware updates over Bluetooth (0.5 and up).
+  final bool ota;
   const PodInfo({
     required this.serial,
     required this.name,
     this.firmware,
     this.hardware,
+    this.ota = false,
   });
 
   /// The last 4 digits of the serial: what a new pod's name ends in, and
@@ -23,6 +27,7 @@ class PodInfo {
     name: name,
     firmware: firmware,
     hardware: hardware,
+    ota: ota,
   );
 
   /// From the pod's info characteristic, e.g.
@@ -37,6 +42,7 @@ class PodInfo {
         name: name,
         firmware: m['fw'] as String?,
         hardware: (m['hw'] as num?)?.toInt(),
+        ota: m['ota'] == 1,
       );
     } catch (_) {
       return null;

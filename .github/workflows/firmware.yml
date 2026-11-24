@@ -1,0 +1,165 @@
+name: Firmware
+
+# Builds the SlidePod firmware for each board, and on main signs it and
+# publishes it for over-the-air updates: the `firmware` release gets
+# manifest.json and slidepod-rev<N>-<version>.bin, and seventh-server's
+# deploy copies them to https://seventh.app/firmware/ (its
+# scripts/fetch-firmware.sh). Pods only install an image signed with the
+# key whose public half is src/slidepod/ota_key.h.
+#
+# Bump SLIDEPOD_FW in src/slidepod/main.cpp for each release: pods update
+# only to a newer version, and publishing changed code under a version
+# that's already out fails.
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'include/**', 'platformio.ini', '.github/workflows/firmware.yml']
+  pull_request:
+    paths: ['src/**', 'include/**', 'platformio.ini', '.github/workflows/firmware.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: firmware-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+      - run: pio run -e slidepod -e slidepod-rev2 -e slidepod-sim
+      - id: version
+        run: |
+          v=$(grep -oP '#define SLIDEPOD_FW "\K[^"]+' src/slidepod/main.cpp)
+          echo "Firmware $v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - run: |
+          mkdir out
+          cp .pio/build/slidepod/firmware.bin "out/slidepod-rev1-${{ steps.version.outputs.version }}.bin"
+          cp .pio/build/slidepod-rev2/firmware.bin "out/slidepod-rev2-${{ steps.version.outputs.version }}.bin"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: out/
+
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: src/slidepod/ota_key.h
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: out
+      - name: Sign, and check against the pods' public key
+        env:
+          FIRMWARE_SIGNING_KEY: ${{ secrets.FIRMWARE_SIGNING_KEY }}
+        run: |
+          if [ -z "$FIRMWARE_SIGNING_KEY" ]; then
+            echo "::error::FIRMWARE_SIGNING_KEY isn't set; nothing is published."
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$FIRMWARE_SIGNING_KEY" > "$RUNNER_TEMP/key.pem"
+          # The public key the pods were built with, from ota_key.h.
+          sed -n 's/^ *"\(.*\)\\n";\{0,1\}$/\1/p' src/slidepod/ota_key.h > "$RUNNER_TEMP/pub.pem"
+          cd out
+          for rev in 1 2; do
+            f="slidepod-rev$rev-$VERSION.bin"
+            openssl dgst -sha256 -sign "$RUNNER_TEMP/key.pem" -out "$f.sig" "$f"
+            openssl dgst -sha256 -verify "$RUNNER_TEMP/pub.pem" -signature "$f.sig" "$f"
+          done
+          rm "$RUNNER_TEMP/key.pem"
+      - name: Manifest
+        run: |
+          cd out
+          python3 - <<'PY'
+          import base64, hashlib, json, os
+          v = os.environ['VERSION']
+          builds = {}
+          for rev in (1, 2):
+              f = f'slidepod-rev{rev}-{v}.bin'
+              data = open(f, 'rb').read()
+              builds[str(rev)] = {
+                  'file': f,
+                  'size': len(data),
+                  'sha256': hashlib.sha256(data).hexdigest(),
+                  'signature': base64.b64encode(open(f + '.sig', 'rb').read()).decode(),
+              }
+          json.dump({'version': v, 'builds': builds}, open('manifest.json', 'w'), indent=1)
+          PY
+          cat manifest.json
+      - name: Refuse changed code under a version that's out
+        run: |
+          gh release download firmware -p manifest.json -O old.json 2>/dev/null || exit 0
+          python3 - <<'PY'
+          import json, sys
+          old, new = json.load(open('old.json')), json.load(open('out/manifest.json'))
+          if old['version'] != new['version']:
+              sys.exit(0)
+          for rev, b in new['builds'].items():
+              o = old['builds'].get(rev)
+              if o and o['sha256'] != b['sha256']:
+                  print(f"::error::Firmware {new['version']} is already published with different code: bump SLIDEPOD_FW.")
+                  sys.exit(1)
+          print('Same build as published; republishing.')
+          PY
+      - name: Publish to the `firmware` release
+        run: |
+          gh release view firmware >/dev/null 2>&1 ||
+            gh release create firmware --title "SlidePod firmware (latest)" --latest=false \
+              --notes "Signed firmware for over-the-air updates, served at https://seventh.app/firmware/. Replaced on every firmware change on main."
+          gh release upload firmware out/manifest.json out/slidepod-rev*-"$VERSION".bin --clobber
+      - name: Deploy seventh.app
+        id: deploy
+        env:
+          FORGE_DEPLOY_HOOK: ${{ secrets.FORGE_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$FORGE_DEPLOY_HOOK" ]; then
+            echo "::warning::FORGE_DEPLOY_HOOK isn't set; the firmware goes live on seventh.app's next deploy."
+            exit 0
+          fi
+          live() {
+            curl -sf "https://seventh.app/firmware/manifest.json?v=$RANDOM" | grep -q "\"version\": \"$VERSION\""
+          }
+          # Forge ignores a hook while a deploy is running: call it again.
+          for attempt in 1 2 3; do
+            curl --fail-with-body -sS -X POST "$FORGE_DEPLOY_HOOK"
+            for i in $(seq 1 24); do
+              if live; then echo "Live after deploy $attempt."; echo "live=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+              sleep 10
+            done
+          done
+          echo "::error::seventh.app isn't serving firmware $VERSION; check the deploy in Forge."
+          exit 1
+      - name: Purge Cloudflare's copy of /firmware/
+        if: steps.deploy.outputs.live == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ZONE_ID" ]; then exit 0; fi
+          curl -sS -X POST "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+            --data '{"prefixes":["seventh.app/firmware/"]}' | jq -e '.success'
