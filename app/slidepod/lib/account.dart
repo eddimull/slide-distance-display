@@ -52,6 +52,7 @@ class Account extends ChangeNotifier {
       return;
     }
     await loadPods();
+    await loadInstruments();
   }
 
   Future<void> signInWithGoogle(String idToken) async =>
@@ -147,6 +148,125 @@ class Account extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Instruments, and the calibration made on each ──
+
+  static const _instrumentKey = 'instrument_id', _calAtKey = 'slide_cal_at';
+
+  List<Instrument> _instruments = const [];
+
+  /// The player's instruments, as last loaded ([loadInstruments]).
+  List<Instrument> get instruments => _instruments;
+
+  /// The instrument being played: its calibration is the one in use.
+  Instrument? get currentInstrument {
+    final id = prefs.getInt(_instrumentKey);
+    for (final i in _instruments) {
+      if (i.id == id) return i;
+    }
+    return null;
+  }
+
+  Future<void> loadInstruments() async {
+    if (!signedIn) return;
+    try {
+      _instruments = await _guard(api.instruments);
+      notifyListeners();
+    } on ApiException {
+      // Kept as they were.
+    }
+  }
+
+  Future<Instrument> addInstrument(
+      {required String name, required String kind, String? make, int? podId}) async {
+    final i = await _guard((t) =>
+        api.addInstrument(t, name: name, kind: kind, make: make, podId: podId));
+    _instruments = [..._instruments, i];
+    notifyListeners();
+    return i;
+  }
+
+  Future<void> updateInstrument(Instrument i, Map<String, Object?> fields) async {
+    final u = await _guard((t) => api.updateInstrument(t, i.id, fields));
+    _instruments = [for (final x in _instruments) x.id == u.id ? u : x];
+    notifyListeners();
+  }
+
+  Future<void> removeInstrument(Instrument i) async {
+    await _guard((t) => api.deleteInstrument(t, i.id));
+    _instruments = [for (final x in _instruments) if (x.id != i.id) x];
+    if (prefs.getInt(_instrumentKey) == i.id) await prefs.remove(_instrumentKey);
+    notifyListeners();
+  }
+
+  /// Makes [i] the instrument being played (null: none).
+  Future<void> chooseInstrument(Instrument? i) async {
+    if (i == null) {
+      await prefs.remove(_instrumentKey);
+    } else {
+      await prefs.setInt(_instrumentKey, i.id);
+    }
+    notifyListeners();
+  }
+
+  /// When the phone's calibration last changed (null: never, or unknown).
+  DateTime? get calibrationAt {
+    final s = prefs.getString(_calAtKey);
+    return s == null ? null : DateTime.tryParse(s);
+  }
+
+  /// The phone's calibration just changed (now, unless [at] says when).
+  Future<void> calibrationChanged([DateTime? at]) => at == null
+      ? prefs.setString(_calAtKey, DateTime.now().toUtc().toIso8601String())
+      : prefs.setString(_calAtKey, at.toUtc().toIso8601String());
+
+  /// Brings the phone's calibration ([local]: its JSON, or null) and the
+  /// current instrument's together, newest wins. Returns the instrument's
+  /// calibration when the phone should load it instead; null otherwise
+  /// (signed out, no instrument, or the phone's is newest and was saved).
+  /// [adoptLocal]: an instrument with none takes the phone's (a new one);
+  /// otherwise a calibration-less instrument means starting over ('').
+  Future<String?> syncCalibration(String? local, {bool adoptLocal = true}) async {
+    final current = currentInstrument;
+    if (!signedIn || current == null) return null;
+    final Instrument server;
+    try {
+      server = await _guard((t) => api.instrument(t, current.id));
+    } on ApiException {
+      return null; // offline: try again later
+    }
+    final localAt = calibrationAt;
+    final serverAt = server.calibrationAt;
+    if (server.calibration != null &&
+        (local == null || localAt == null || serverAt!.isAfter(localAt))) {
+      await calibrationChanged(serverAt);
+      return server.calibration;
+    }
+    if (server.calibration == null && !adoptLocal) {
+      return '';
+    }
+    if (local == null) return null;
+    if (serverAt != null && localAt != null && !localAt.isAfter(serverAt)) {
+      return null; // the same
+    }
+    try {
+      final saved = await _guard((t) => api.putCalibration(
+          t, current.id, local, localAt ?? DateTime.now()));
+      _instruments = [for (final x in _instruments) x.id == saved.id ? saved : x];
+      notifyListeners();
+    } on ApiException catch (e) {
+      // Someone saved a newer one (another phone): take it.
+      final inst = e.body?['instrument'];
+      if (e.status == 409 && inst is Map<String, dynamic>) {
+        final newer = Instrument.fromJson(inst);
+        if (newer.calibration != null) {
+          await calibrationChanged(newer.calibrationAt);
+          return newer.calibration;
+        }
+      }
+    }
+    return null;
+  }
+
   /// Runs [call] with the token; signs out if the server says it's gone.
   Future<T> _guard<T>(Future<T> Function(String token) call) async {
     final t = _token;
@@ -187,6 +307,7 @@ class Account extends ChangeNotifier {
     await prefs.setString(_tokenKey, s.token);
     await _setPlayer(s.player);
     unawaited(loadPods());
+    unawaited(loadInstruments());
   }
 
   Future<void> _setPlayer(Player p) async {
@@ -204,6 +325,8 @@ class Account extends ChangeNotifier {
     _token = null;
     _player = null;
     _pods = const [];
+    _instruments = const [];
+    await prefs.remove(_instrumentKey);
     await prefs.remove(_tokenKey);
     await prefs.remove(_idKey);
     await prefs.remove(_nameKey);

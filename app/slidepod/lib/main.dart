@@ -12,6 +12,7 @@ import 'flash_card_screen.dart';
 import 'gliss_take.dart';
 import 'high_scores.dart';
 import 'high_scores_screen.dart';
+import 'instruments_screen.dart';
 import 'learn_screen.dart';
 import 'live_view.dart';
 import 'one_euro.dart';
@@ -167,8 +168,18 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _openAccount().then((a) {
-      if (mounted) setState(() => _acct = a);
+    _openAccount().then((a) async {
+      if (!mounted) return;
+      setState(() => _acct = a);
+      // The account's instruments, then this phone's calibration with the
+      // current one's.
+      await a.loadInstruments();
+      await _syncCal();
+    });
+    // Calibration keeps learning while you play: send it at most a minute
+    // after it changes.
+    _calSyncTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (_calPushDue) _syncCal();
     });
     _listen();
     _loadCal();
@@ -393,6 +404,54 @@ class _HomePageState extends State<HomePage> {
     if (!_calDirty || _prefs == null) return;
     _calDirty = false;
     _prefs!.setString(_calKey, _cal.toJson());
+    if (!_source.isMock) {
+      // Changed on this phone: the account's copy is due an update.
+      _acct?.calibrationChanged();
+      _calPushDue = true;
+    }
+  }
+
+  /// The calibration has changed since the account last had it.
+  bool _calPushDue = false;
+  Timer? _calSyncTimer;
+
+  /// Brings the calibration and the current instrument's on the account
+  /// together (signed in, with an instrument chosen): newest wins.
+  /// [adoptLocal]: false when switching to another instrument, which
+  /// starts uncalibrated if it has no calibration of its own.
+  Future<void> _syncCal({bool adoptLocal = true}) async {
+    final a = _acct;
+    if (a == null || _source.isMock || !a.signedIn) return;
+    await _calLoaded;
+    _saveCal();
+    _calPushDue = false;
+    final load = await a.syncCalibration(_cal.calibrated ? _cal.toJson() : null,
+        adoptLocal: adoptLocal);
+    if (load == null || !mounted) return;
+    setState(() => load.isEmpty ? _cal.reset() : _cal.loadJson(load));
+    _prefs?.setString(_calKey, _cal.toJson());
+  }
+
+  /// Plays [i] from now on: the last one's calibration is saved first, then
+  /// [i]'s is loaded. A new first instrument takes the phone's.
+  Future<void> _useInstrument(Instrument i, {bool isNew = false}) async {
+    final a = _acct;
+    if (a == null) return;
+    if (a.currentInstrument?.id != i.id) await _syncCal();
+    await a.chooseInstrument(i);
+    await _syncCal(adoptLocal: isNew && a.instruments.length == 1);
+  }
+
+  Future<void> _openInstruments() async {
+    final a = _acct;
+    if (a == null) return;
+    final pod = _source.pod;
+    await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => InstrumentsScreen(
+              account: a,
+              onChoose: _useInstrument,
+              linkedPodId: pod == null ? null : a.linkedPod(pod.serial)?.id,
+            )));
   }
 
   void _setEasy(bool easy) {
@@ -438,6 +497,7 @@ class _HomePageState extends State<HomePage> {
     if (result != null) {
       _calDirty = true;
       _saveCal();
+      await _syncCal();
     }
   }
 
@@ -591,6 +651,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _calSaveTimer?.cancel();
+    _calSyncTimer?.cancel();
     _saveCal();
     _frames.close();
     _pitchSub?.cancel();
@@ -666,6 +727,7 @@ class _HomePageState extends State<HomePage> {
         account: account,
         onDisconnect: () => _source.disconnect(),
         onCalibrate: _openCalibration,
+        onInstruments: _openInstruments,
         onUpdate: _source.isMock
             ? null
             : (b) => Navigator.of(context).push(MaterialPageRoute(
@@ -693,6 +755,16 @@ class _HomePageState extends State<HomePage> {
     final account = await _openAccount();
     if (account.signedIn && account.pods.isEmpty) await account.loadPods();
     await account.podSeen(pod);
+    // The instrument this pod is on, if one says so.
+    final linked = account.linkedPod(pod.serial);
+    if (linked != null && account.currentInstrument?.podId != linked.id) {
+      for (final i in account.instruments) {
+        if (i.podId == linked.id) {
+          await _useInstrument(i);
+          break;
+        }
+      }
+    }
   }
 
   Future<void> _scanAndConnect() async {
@@ -859,6 +931,7 @@ class _HomePageState extends State<HomePage> {
                 onHidePractice: () => _setPracticeHidden(true),
                 calibrated: _cal.calibrated,
                 upperLearned: _cal.learnedUpper.length,
+                instrument: _acct?.currentInstrument?.name,
                 onCalibrate: _openCalibration,
                 positionHistory: _posHistory,
                 pitchHistory: _pitchHistory,
