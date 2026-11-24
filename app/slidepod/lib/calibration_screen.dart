@@ -233,7 +233,7 @@ class _Intro extends StatelessWidget {
                 const SizedBox(height: 8),
                 const Text(
                   'You\'ll play three slow glissandos, from 1st position all '
-                  'the way out to 7th. SlidePod listens and learns where each '
+                  'the way out to 7th. Seventh listens and learns where each '
                   'position sits on your horn.',
                   style: TextStyle(fontSize: 16, height: 1.5, color: _body),
                 ),

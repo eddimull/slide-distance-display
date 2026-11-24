@@ -6,7 +6,7 @@
     <!-- The Seventh server: sign-in and leaderboards. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:label="slidepod"
+        android:label="Seventh"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Slidepod</string>
+	<string>Seventh</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>slidepod</string>
+	<string>Seventh</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -48,11 +48,11 @@
 		</dict>
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>SlidePod uses Bluetooth to connect to your trombone slide sensor.</string>
+	<string>Seventh uses Bluetooth to connect to your SlidePod, the sensor on your trombone slide.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>SlidePod listens to your trombone to detect pitch and calibrate slide positions.</string>
+	<string>Seventh listens to your trombone to hear the notes you play and calibrate the slide positions.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>SlidePod uses Bluetooth to connect to your trombone slide sensor.</string>
+	<string>Seventh uses Bluetooth to connect to your SlidePod, the sensor on your trombone slide.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
