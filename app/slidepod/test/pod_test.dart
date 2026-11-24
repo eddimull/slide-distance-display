@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:slidepod/firmware_update.dart';
 import 'package:slidepod/pod_info.dart';
 import 'package:slidepod/pod_sheet.dart';
 import 'package:slidepod/slidepod_ble.dart';
@@ -51,6 +53,11 @@ class _FakePod implements SlidePodSource {
 
   @override
   Future<void> blink() async => blinks++;
+  @override
+  Future<void> updateFirmware(Uint8List image, FirmwareBuild build,
+          {void Function(double)? onProgress}) async {}
+  @override
+  Future<bool> reconnect() async => true;
   @override
   PodPower? get power => null;
   @override

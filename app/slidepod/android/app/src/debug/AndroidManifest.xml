@@ -4,4 +4,7 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Debug builds only: plain HTTP, for testing firmware updates from a
+         local server (SEVENTH_FIRMWARE=http://localhost:…, adb reverse). -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>

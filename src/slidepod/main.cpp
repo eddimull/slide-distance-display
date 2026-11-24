@@ -281,15 +281,22 @@ static volatile uint8_t g_ledR = 0, g_ledG = 0, g_ledB = 0;
 #define SLIDEPOD_NAME_UUID "d5e40004-7537-4463-a441-27f2d3140fab"
 #define SLIDEPOD_INFO_UUID "d5e40005-7537-4463-a441-27f2d3140fab"
 #define SLIDEPOD_POWER_UUID "d5e40006-7537-4463-a441-27f2d3140fab"
+#define SLIDEPOD_OTA_CTRL_UUID "d5e40007-7537-4463-a441-27f2d3140fab"
+#define SLIDEPOD_OTA_DATA_UUID "d5e40008-7537-4463-a441-27f2d3140fab"
 
 // Firmware version, reported in the info characteristic.
-#define SLIDEPOD_FW "0.4.1"
+#define SLIDEPOD_FW "0.5.0"
 
 // Longest name, in UTF-8 bytes: fits the scan response (31 bytes) with room
 // to spare, and the app's lists.
 static constexpr size_t POD_NAME_MAX = 20;
 
 #include <Preferences.h>
+#include <Update.h>
+#include <mbedtls/pk.h>
+#include <mbedtls/sha256.h>
+#include <freertos/stream_buffer.h>
+#include "ota_key.h"
 
 static char g_serial[13];          // e.g. "7CDFA1E23F2A"
 static std::string g_name;          // what the pod advertises
@@ -382,6 +389,197 @@ class NameWrite : public NimBLECharacteristicCallbacks {
 };
 static NameWrite nameWriteCb;
 
+// ── Firmware updates over BLE ───────────────────────────────────────────
+// Control (d5e40007, write + notify):
+//   app → pod  [1 BEGIN][size u32][hw u8][sha256 ×32]
+//              [3 END][sig len u8][ECDSA P-256 signature, DER]
+//              [2 ABORT]
+//   pod → app  [1 BEGIN][err]          ready (err 0) or refused
+//              [4 PROGRESS][bytes u32] written to flash, every 4 KB
+//              [5 RESEND][offset u32]  a chunk was missing or didn't fit:
+//                                      send again from offset
+//              [3 END][err]            installed (0): rebooting into it
+//              [6 ERROR][err]          gave up; the old firmware stays
+// Data (d5e40008, write without response): [offset u32][bytes].
+// Chunks queue in a buffer that a task writes to flash, hashing as it
+// goes; at END the hash must match and be signed by our key, or nothing is
+// installed. All little-endian.
+enum : uint8_t { OTA_BEGIN = 1, OTA_ABORT = 2, OTA_END = 3,
+                 OTA_PROGRESS = 4, OTA_RESEND = 5, OTA_ERROR = 6 };
+enum : uint8_t { OTA_OK = 0, OTA_E_SIZE = 1, OTA_E_HW = 2, OTA_E_FLASH = 4,
+                 OTA_E_HASH = 5, OTA_E_SIG = 6, OTA_E_STATE = 7,
+                 OTA_E_SHORT = 8, OTA_E_MSG = 9 };
+
+static NimBLECharacteristic* otaCtrlChr = nullptr;
+static volatile bool g_otaActive = false;
+static volatile uint8_t g_otaFailed = OTA_OK;   // set by the writer task
+static volatile uint32_t g_otaWritten = 0;      // bytes in flash
+static uint32_t g_otaSize = 0;
+static uint32_t g_otaQueued = 0;                // bytes accepted so far
+static bool g_otaResendSent = false;            // one RESEND per gap
+static uint8_t g_otaSha[32];
+static mbedtls_sha256_context g_otaShaCtx;
+static StreamBufferHandle_t g_otaBuf = nullptr;
+static uint32_t g_otaRebootAt = 0;
+// END, handed to the writer task: checking the signature needs more stack
+// than the BLE host task has (it overflowed and rebooted the pod).
+static volatile bool g_otaEndRequested = false;
+static uint8_t g_otaSig[80];
+static size_t g_otaSigLen = 0;
+static uint32_t g_otaEndAt = 0;
+
+static void ota_event(uint8_t kind, uint32_t value, bool u32) {
+  if (!otaCtrlChr) return;
+  uint8_t b[5] = {kind, (uint8_t)value, (uint8_t)(value >> 8),
+                  (uint8_t)(value >> 16), (uint8_t)(value >> 24)};
+  otaCtrlChr->setValue(b, u32 ? 5 : 2);
+  otaCtrlChr->notify();
+}
+
+static void ota_fail(uint8_t err) {
+  if (g_otaActive) Update.abort();
+  g_otaActive = false;
+  Serial.printf("# ota: failed, error %u\n", err);
+  ota_event(OTA_ERROR, err, false);
+}
+
+static uint8_t ota_verify(const uint8_t* sig, size_t sigLen) {
+  if (g_otaFailed) return g_otaFailed;
+  if (g_otaWritten != g_otaSize) return OTA_E_SHORT;
+  uint8_t hash[32];
+  mbedtls_sha256_finish(&g_otaShaCtx, hash);
+  if (memcmp(hash, g_otaSha, 32) != 0) return OTA_E_HASH;
+  mbedtls_pk_context pk;
+  mbedtls_pk_init(&pk);
+  int rc = mbedtls_pk_parse_public_key(
+      &pk, (const unsigned char*)SLIDEPOD_OTA_PUBLIC_KEY,
+      sizeof SLIDEPOD_OTA_PUBLIC_KEY);
+  if (rc == 0)
+    rc = mbedtls_pk_verify(&pk, MBEDTLS_MD_SHA256, hash, sizeof hash, sig, sigLen);
+  mbedtls_pk_free(&pk);
+  return rc == 0 ? OTA_OK : OTA_E_SIG;
+}
+
+// Checks the image and installs it (on the writer task: see g_otaSig).
+static void ota_finish() {
+  g_otaEndRequested = false;
+  const uint8_t err = ota_verify(g_otaSig, g_otaSigLen);
+  if (err) { ota_fail(err); return; }
+  if (!Update.end(true)) { ota_fail(OTA_E_FLASH); return; }
+  g_otaActive = false;
+  Serial.println("# ota: installed, rebooting");
+  ota_event(OTA_END, OTA_OK, false);
+  g_otaRebootAt = millis() + 1000;  // let the notify go out first
+}
+
+// Drains the buffer into flash (a flash erase takes tens of ms: not in the
+// BLE callback), and finishes the update once END has come and everything
+// queued is written.
+static void ota_task(void*) {
+  static uint8_t chunk[4096];
+  for (;;) {
+    const size_t n = xStreamBufferReceive(g_otaBuf, chunk, sizeof chunk, pdMS_TO_TICKS(50));
+    if (n && g_otaActive && !g_otaFailed) {
+      if (Update.write(chunk, n) != n) {
+        g_otaFailed = OTA_E_FLASH;
+      } else {
+        mbedtls_sha256_update(&g_otaShaCtx, chunk, n);
+        const uint32_t before = g_otaWritten;
+        g_otaWritten = before + n;
+        if (g_otaWritten / 4096 != before / 4096 || g_otaWritten == g_otaSize)
+          ota_event(OTA_PROGRESS, g_otaWritten, true);
+      }
+    }
+    if (g_otaEndRequested && g_otaActive) {
+      if (g_otaWritten >= g_otaQueued || g_otaFailed) ota_finish();
+      else if (millis() - g_otaEndAt > 3000) { g_otaEndRequested = false; ota_fail(OTA_E_SHORT); }
+    }
+  }
+}
+
+class OtaCtrlWrite : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c) override {
+    const std::string v = c->getValue();
+    if (v.empty()) return;
+    const uint8_t* b = (const uint8_t*)v.data();
+    switch (b[0]) {
+      case OTA_BEGIN: {
+        if (v.size() != 38) { ota_event(OTA_BEGIN, OTA_E_MSG, false); return; }
+        if (g_otaActive) Update.abort();
+        g_otaActive = false;
+        const uint32_t size = b[1] | (b[2] << 8) | (b[3] << 16) | ((uint32_t)b[4] << 24);
+        if (b[5] != SLIDEPOD_REV) { ota_event(OTA_BEGIN, OTA_E_HW, false); return; }
+        if (!size || !Update.begin(size)) { ota_event(OTA_BEGIN, OTA_E_SIZE, false); return; }
+        memcpy(g_otaSha, b + 6, 32);
+        mbedtls_sha256_init(&g_otaShaCtx);
+        mbedtls_sha256_starts(&g_otaShaCtx, 0);
+        if (!g_otaBuf) {
+          g_otaBuf = xStreamBufferCreate(16 * 1024, 1);
+          xTaskCreatePinnedToCore(ota_task, "ota", 12288, nullptr, 1, nullptr, 0);
+        }
+        xStreamBufferReset(g_otaBuf);
+        g_otaSize = size;
+        g_otaQueued = 0;
+        g_otaWritten = 0;
+        g_otaFailed = OTA_OK;
+        g_otaResendSent = false;
+        g_otaEndRequested = false;
+        g_otaActive = true;
+        Serial.printf("# ota: receiving %u bytes\n", size);
+        ota_event(OTA_BEGIN, OTA_OK, false);
+        return;
+      }
+      case OTA_END: {
+        if (!g_otaActive) { ota_event(OTA_ERROR, OTA_E_STATE, false); return; }
+        if (v.size() < 3 || v.size() != 2u + b[1] || b[1] > sizeof g_otaSig) {
+          ota_fail(OTA_E_MSG);
+          return;
+        }
+        memcpy(g_otaSig, b + 2, b[1]);
+        g_otaSigLen = b[1];
+        g_otaEndAt = millis();
+        g_otaEndRequested = true;  // the writer task checks and installs
+        return;
+      }
+      case OTA_ABORT:
+        if (g_otaActive) ota_fail(OTA_E_STATE);
+        return;
+    }
+  }
+};
+static OtaCtrlWrite otaCtrlCb;
+
+class OtaDataWrite : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c) override {
+    if (!g_otaActive || g_otaFailed) return;
+    const std::string v = c->getValue();
+    if (v.size() < 5) return;
+    const uint8_t* b = (const uint8_t*)v.data();
+    const uint32_t off = b[0] | (b[1] << 8) | (b[2] << 16) | ((uint32_t)b[3] << 24);
+    const size_t len = v.size() - 4;
+    if (off < g_otaQueued) return;  // a repeat of what we have
+    if (off > g_otaQueued || off + len > g_otaSize ||
+        xStreamBufferSpacesAvailable(g_otaBuf) < len) {
+      // A gap, or no room: ask for it again (once until it comes).
+      if (!g_otaResendSent) ota_event(OTA_RESEND, g_otaQueued, true);
+      g_otaResendSent = true;
+      return;
+    }
+    xStreamBufferSend(g_otaBuf, b + 4, len, 0);
+    g_otaQueued += len;
+    g_otaResendSent = false;
+  }
+};
+static OtaDataWrite otaDataCb;
+
+static bool ota_busy() { return g_otaActive; }
+
+// The pod's loop: a failure the writer task flagged, and the reboot.
+static void ota_poll() {
+  if (g_otaActive && g_otaFailed) ota_fail(g_otaFailed);
+  if (g_otaRebootAt && (int32_t)(millis() - g_otaRebootAt) >= 0) ESP.restart();
+}
+
 // Debug: log raw GAP connect/disconnect events (status / reason codes).
 static int gap_log(struct ble_gap_event* ev, void*) {
   switch (ev->type) {
@@ -433,6 +631,11 @@ static void ble_keep_fast() {
   if (!srv || !srv->getConnectedCount()) {
     tries = 0;
     g_ledFromApp = false;  // app gone: the pod owns the LED again
+    if (g_otaActive) {     // the app left mid-update: keep the old firmware
+      Update.abort();
+      g_otaActive = false;
+      Serial.println("# ota: app disconnected, abandoned");
+    }
     return;
   }
   if (!posChr->getSubscribedCount()) return;
@@ -471,7 +674,8 @@ static void ble_init() {
   // Who this pod is, as JSON. A custom characteristic rather than Device
   // Information's serial number, which Web Bluetooth blocks.
   char info[96];
-  snprintf(info, sizeof info, "{\"serial\":\"%s\",\"fw\":\"%s\",\"hw\":%d}",
+  snprintf(info, sizeof info,
+           "{\"serial\":\"%s\",\"fw\":\"%s\",\"hw\":%d,\"ota\":1}",
            g_serial, SLIDEPOD_FW, SLIDEPOD_REV);
   svc->createCharacteristic(SLIDEPOD_INFO_UUID, NIMBLE_PROPERTY::READ)
      ->setValue(std::string(info));
@@ -480,6 +684,16 @@ static void ble_init() {
     SLIDEPOD_POWER_UUID,
     NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
   );
+  // Firmware updates: see OtaCtrlWrite.
+  otaCtrlChr = svc->createCharacteristic(
+    SLIDEPOD_OTA_CTRL_UUID,
+    NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY
+  );
+  otaCtrlChr->setCallbacks(&otaCtrlCb);
+  svc->createCharacteristic(
+    SLIDEPOD_OTA_DATA_UUID,
+    NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
+  )->setCallbacks(&otaDataCb);
   svc->start();
 
   // Advertisement (31 bytes): flags (3) + the service UUID (18) + the serial
@@ -507,6 +721,7 @@ static void ble_init() {
 static void ble_notify(uint16_t raw, uint16_t filt, uint16_t pos10k,
                        uint16_t pitch10) {
   if (!posChr || !posChr->getSubscribedCount()) return;
+  if (g_otaActive) return;  // the link is busy with the update
   uint8_t buf[8];
   buf[0] = raw;       buf[1] = raw >> 8;
   buf[2] = filt;      buf[3] = filt >> 8;
@@ -518,6 +733,8 @@ static void ble_notify(uint16_t raw, uint16_t filt, uint16_t pos10k,
 #else
 static void ble_init() {}
 static void ble_keep_fast() {}
+static bool ota_busy() { return false; }
+static void ota_poll() {}
 static void ble_notify(uint16_t, uint16_t, uint16_t, uint16_t) {}
 #endif
 
@@ -662,6 +879,7 @@ void setup() {
   setRgb(true, false, false);   // red = booting
 
   Serial.println("# SlidePod booting...");
+  Serial.printf("# reset reason %d\n", (int)esp_reset_reason());
 
 #ifndef WOKWI_SIM
   Wire.begin(PIN_SDA, PIN_SCL);
@@ -709,6 +927,7 @@ void loop() {
 #endif
 
   ble_keep_fast();
+  ota_poll();
   if (battery_update()) {
     ble_power(true);
     Serial.printf("# battery %u mV, %u%%, usb=%d\n", g_batteryMv, g_batteryPct, g_usbPower);
@@ -731,9 +950,12 @@ void loop() {
     ((float)raw - DIST_CLOSED) / (DIST_OPEN - DIST_CLOSED),
     0.0f, 1.0f);
 
-  // LED: the app's colour if it set one (Easy mode), otherwise green at
-  // rest and blue when the slide is out.
-  if (g_ledFromApp)
+  // LED: purple, blinking, while an update comes in; else the app's colour
+  // if it set one (Easy mode), otherwise green at rest and blue when the
+  // slide is out.
+  if (ota_busy())
+    setRgb8((millis() / 250) % 2 ? 120 : 0, 0, (millis() / 250) % 2 ? 255 : 0);
+  else if (g_ledFromApp)
     setRgb8(g_ledR, g_ledG, g_ledB);
   else if (pos > 0.03f)
     setRgb(false, false, true);

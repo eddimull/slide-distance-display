@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'account.dart';
 import 'pod_sheet.dart';
 import 'calibration_screen.dart';
+import 'firmware_screen.dart';
 import 'flash_card_screen.dart';
 import 'gliss_take.dart';
 import 'high_scores.dart';
@@ -665,6 +666,10 @@ class _HomePageState extends State<HomePage> {
         account: account,
         onDisconnect: () => _source.disconnect(),
         onCalibrate: _openCalibration,
+        onUpdate: _source.isMock
+            ? null
+            : (b) => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => FirmwareUpdateScreen(source: _source, build: b))),
       ),
     );
     if (mounted) setState(() => _status = _podStatus());

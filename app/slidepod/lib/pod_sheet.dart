@@ -5,6 +5,7 @@ import 'account.dart';
 import 'ui/top_bar.dart';
 import 'ui/seventh.dart';
 import 'account_screen.dart';
+import 'firmware_update.dart';
 import 'pod_info.dart';
 import 'seventh_api.dart';
 import 'slidepod_ble.dart';
@@ -152,12 +153,21 @@ class PodSheet extends StatefulWidget {
 
   /// Opens calibration (the sheet closes first); null hides the row.
   final VoidCallback? onCalibrate;
+
+  /// Opens the firmware update to the build given (the sheet closes
+  /// first); null: no updates offered.
+  final void Function(FirmwareBuild)? onUpdate;
+
+  /// Where updates come from (tests).
+  final FirmwareCatalog? catalog;
   const PodSheet({
     super.key,
     required this.source,
     required this.account,
     required this.onDisconnect,
     this.onCalibrate,
+    this.onUpdate,
+    this.catalog,
   });
 
   @override
@@ -169,7 +179,30 @@ class _PodSheetState extends State<PodSheet> {
   bool _busy = false;
   String? _message;
 
+  /// A newer build for this pod, once the manifest is in.
+  FirmwareBuild? _update;
+
+  /// Newer firmware exists, but this pod's can't take it over Bluetooth.
+  bool _usbOnly = false;
+
   PodInfo? get _pod => widget.source.pod;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.onUpdate != null) _checkFirmware();
+  }
+
+  Future<void> _checkFirmware() async {
+    final m = await (widget.catalog ?? FirmwareCatalog.shared).manifest();
+    final pod = _pod;
+    if (!mounted || m == null || pod == null) return;
+    final b = m.updateFor(pod.hardware, pod.firmware);
+    setState(() {
+      _update = pod.ota ? b : null;
+      _usbOnly = b != null && !pod.ota;
+    });
+  }
 
   Future<void> _run(Future<void> Function() job) async {
     setState(() {
@@ -321,6 +354,21 @@ class _PodSheetState extends State<PodSheet> {
                                   widget.onCalibrate!();
                                 },
                         ),
+                      if (_update case final b?)
+                        _Row(
+                          icon: Icons.system_update_alt,
+                          iconColor: Seventh.accent,
+                          title: 'Update firmware',
+                          trailing: b.version,
+                          trailingColor: Seventh.accent,
+                          divider: true,
+                          onTap: _busy
+                              ? null
+                              : () {
+                                  Navigator.pop(context);
+                                  widget.onUpdate!(b);
+                                },
+                        ),
                       if (pod != null && account != null && account.available)
                         if (widget.source.isMock)
                           const _Row(
@@ -365,7 +413,11 @@ class _PodSheetState extends State<PodSheet> {
                 Text(
                   pod == null
                       ? 'Older firmware: update it to rename this pod or link it to your account.'
-                      : 'Serial ${pod.serial} · firmware ${pod.firmware ?? '–'}',
+                      : [
+                          'Serial ${pod.serial} · firmware ${pod.firmware ?? '–'}',
+                          if (_usbOnly)
+                            'Newer firmware needs one update by USB first; after that it updates over Bluetooth.',
+                        ].join('\n'),
                   style: Seventh.small,
                 ),
                 if (_message != null) ...[
