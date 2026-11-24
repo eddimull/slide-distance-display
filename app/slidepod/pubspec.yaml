@@ -97,10 +97,16 @@ flutter:
     - family: JetBrains Mono
       fonts:
         - asset: fonts/JetBrainsMono.ttf
+    # ♭ ♮ ♯ only (none of the above have them): a subset of Noto Music
+    # with Inter's line metrics, used as every style's fallback.
+    - family: Seventh Symbols
+      fonts:
+        - asset: fonts/SeventhSymbols.ttf
   assets:
     - fonts/OFL-SpaceGrotesk.txt
     - fonts/OFL-Inter.txt
     - fonts/OFL-JetBrainsMono.txt
+    - fonts/OFL-NotoMusic.txt
 
   # fonts:
   #   - family: Schyler

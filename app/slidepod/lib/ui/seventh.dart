@@ -77,9 +77,12 @@ class Seventh {
   static const bodyFont = 'Inter';
   static const monoFont = 'JetBrains Mono';
 
+  /// ♭ ♮ ♯, which the fonts above lack (B♭, never Bb).
+  static const fallback = ['Seventh Symbols'];
+
   /// Tab titles: Live, Takes, Learn.
   static const tabTitle = TextStyle(
-    fontFamily: titleFont,
+    fontFamily: titleFont, fontFamilyFallback: fallback,
     fontSize: 30,
     fontWeight: FontWeight.w700,
     letterSpacing: -0.6,
@@ -89,35 +92,35 @@ class Seventh {
 
   /// Screen titles (pushed screens, sheets).
   static const screenTitle = TextStyle(
-    fontFamily: titleFont,
+    fontFamily: titleFont, fontFamilyFallback: fallback,
     fontSize: 20,
     fontWeight: FontWeight.w600,
     color: text,
   );
 
   static const heading = TextStyle(
-    fontFamily: bodyFont,
+    fontFamily: bodyFont, fontFamilyFallback: fallback,
     fontSize: 16,
     fontWeight: FontWeight.w600,
     color: text,
   );
 
   static const bodyText = TextStyle(
-    fontFamily: bodyFont,
+    fontFamily: bodyFont, fontFamilyFallback: fallback,
     fontSize: 15,
     height: 1.5,
     color: body,
   );
 
   static const small = TextStyle(
-    fontFamily: bodyFont,
+    fontFamily: bodyFont, fontFamilyFallback: fallback,
     fontSize: 12,
     color: muted,
   );
 
   /// Section labels, set in capitals by the caller: "LAST 4 SECONDS".
   static const label = TextStyle(
-    fontFamily: bodyFont,
+    fontFamily: bodyFont, fontFamilyFallback: fallback,
     fontSize: 11,
     fontWeight: FontWeight.w600,
     letterSpacing: 1.1,
@@ -126,7 +129,7 @@ class Seventh {
 
   /// Numbers: positions, cents, scores, times.
   static const mono = TextStyle(
-    fontFamily: monoFont,
+    fontFamily: monoFont, fontFamilyFallback: fallback,
     fontFeatures: [FontFeature.tabularFigures()],
   );
 
@@ -160,7 +163,7 @@ class Seventh {
       borderRadius: BorderRadius.circular(buttonRadius),
     );
     const buttonText = TextStyle(
-      fontFamily: bodyFont,
+      fontFamily: bodyFont, fontFamilyFallback: fallback,
       fontSize: 16,
       fontWeight: FontWeight.w600,
     );
@@ -168,7 +171,7 @@ class Seventh {
       scaffoldBackgroundColor: ground,
       canvasColor: ground,
       dividerColor: line,
-      textTheme: base.textTheme
+      textTheme: _withFallback(base.textTheme
           .apply(bodyColor: body, displayColor: text, fontFamily: bodyFont)
           .copyWith(
             headlineLarge: tabTitle,
@@ -180,7 +183,7 @@ class Seventh {
             bodyMedium: bodyText.copyWith(fontSize: 14),
             bodySmall: small,
             labelSmall: label,
-          ),
+          )),
       appBarTheme: const AppBarTheme(
         backgroundColor: ground,
         foregroundColor: text,
@@ -270,7 +273,7 @@ class Seventh {
       snackBarTheme: const SnackBarThemeData(
         backgroundColor: raised,
         contentTextStyle: TextStyle(
-          fontFamily: bodyFont,
+          fontFamily: bodyFont, fontFamilyFallback: fallback,
           fontSize: 14,
           color: text,
         ),
@@ -291,7 +294,7 @@ class Seventh {
           ),
           textStyle: const WidgetStatePropertyAll(
             TextStyle(
-              fontFamily: bodyFont,
+              fontFamily: bodyFont, fontFamilyFallback: fallback,
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
@@ -312,7 +315,7 @@ class Seventh {
         ),
         labelTextStyle: WidgetStateProperty.resolveWith(
           (s) => TextStyle(
-            fontFamily: bodyFont,
+            fontFamily: bodyFont, fontFamilyFallback: fallback,
             fontSize: 12,
             fontWeight: s.contains(WidgetState.selected)
                 ? FontWeight.w600
@@ -357,7 +360,7 @@ class Seventh {
         backgroundColor: raised,
         side: BorderSide.none,
         labelStyle: const TextStyle(
-          fontFamily: bodyFont,
+          fontFamily: bodyFont, fontFamilyFallback: fallback,
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: body,
@@ -372,7 +375,7 @@ class Seventh {
           borderRadius: BorderRadius.circular(8),
         ),
         textStyle: const TextStyle(
-          fontFamily: bodyFont,
+          fontFamily: bodyFont, fontFamilyFallback: fallback,
           fontSize: 12,
           color: text,
         ),
@@ -380,6 +383,24 @@ class Seventh {
     );
   }
 }
+
+TextTheme _withFallback(TextTheme t) => t.copyWith(
+      displayLarge: t.displayLarge?.copyWith(fontFamilyFallback: Seventh.fallback),
+      displayMedium: t.displayMedium?.copyWith(fontFamilyFallback: Seventh.fallback),
+      displaySmall: t.displaySmall?.copyWith(fontFamilyFallback: Seventh.fallback),
+      headlineLarge: t.headlineLarge?.copyWith(fontFamilyFallback: Seventh.fallback),
+      headlineMedium: t.headlineMedium?.copyWith(fontFamilyFallback: Seventh.fallback),
+      headlineSmall: t.headlineSmall?.copyWith(fontFamilyFallback: Seventh.fallback),
+      titleLarge: t.titleLarge?.copyWith(fontFamilyFallback: Seventh.fallback),
+      titleMedium: t.titleMedium?.copyWith(fontFamilyFallback: Seventh.fallback),
+      titleSmall: t.titleSmall?.copyWith(fontFamilyFallback: Seventh.fallback),
+      bodyLarge: t.bodyLarge?.copyWith(fontFamilyFallback: Seventh.fallback),
+      bodyMedium: t.bodyMedium?.copyWith(fontFamilyFallback: Seventh.fallback),
+      bodySmall: t.bodySmall?.copyWith(fontFamilyFallback: Seventh.fallback),
+      labelLarge: t.labelLarge?.copyWith(fontFamilyFallback: Seventh.fallback),
+      labelMedium: t.labelMedium?.copyWith(fontFamilyFallback: Seventh.fallback),
+      labelSmall: t.labelSmall?.copyWith(fontFamilyFallback: Seventh.fallback),
+    );
 
 /// A tag: tuning, slide moves, "No playing".
 class SeventhTag extends StatelessWidget {

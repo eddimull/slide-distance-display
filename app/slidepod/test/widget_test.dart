@@ -9,7 +9,9 @@ void main() {
     await tester.pumpWidget(const MaterialApp(
       home: HomePage(autoMock: false),
     ));
-    expect(find.text('Connect'), findsOneWidget); // the pod pill
+    // The pod pill and the button in the middle both connect.
+    expect(find.text('Connect'), findsNWidgets(2));
+    expect(find.text('Connect your SlidePod'), findsOneWidget);
     expect(find.text('Not connected'), findsOneWidget);
   });
 
@@ -24,19 +26,22 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('Easy mode shows only the position and tuning feedback',
+  testWidgets('Simple shows the position and tuning; Detail adds more',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({'ui_easy': true});
     await tester.pumpWidget(const MaterialApp(home: HomePage(autoMock: true)));
     await tester.pump(const Duration(seconds: 2));
 
-    expect(find.text('Position'), findsOneWidget);
-    expect(find.text('Raw'), findsNothing); // no raw data footer
+    expect(find.text('POSITION'), findsOneWidget);
+    expect(find.text('PLAYING'), findsOneWidget);
+    expect(find.text('LAST 4 SECONDS'), findsNothing);
 
-    // Switching to Full brings the detail back, and is remembered.
+    // Detail adds the trace and calibration, and is remembered.
     await tester.tap(find.text('Detail'));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Raw'), findsOneWidget);
+    expect(find.text('POSITION'), findsOneWidget);
+    expect(find.text('LAST 4 SECONDS'), findsOneWidget);
+    expect(find.textContaining('alibrat'), findsWidgets);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool('ui_easy'), isFalse);
 
@@ -57,7 +62,10 @@ void main() {
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('Practise your positions'), findsOneWidget);
 
-    // Closing it hides it, says where the games are, and remembers.
+    // Closing it hides it, says where the games are, and remembers. (The
+    // test screen is short: scroll the card into view first.)
+    await tester.ensureVisible(find.byTooltip('Hide this card'));
+    await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(find.byTooltip('Hide this card'));
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Practise your positions'), findsNothing);
