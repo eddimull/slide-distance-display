@@ -1,5 +1,9 @@
 import 'dart:math' as math;
 
+import 'clef.dart';
+
+export 'clef.dart' show Clef;
+
 /// The rules of the flash-card games: a card is shown (a position, or a
 /// note), you move the slide to a position that answers it, and the faster you get there the more it scores. No
 /// playing needed, just the slide.
@@ -100,11 +104,21 @@ class FlashCard {
   final String label;
   final Set<int> positions;
 
-  /// The note shown, for decks of notes.
+  /// The note shown, for decks of notes, and the clef it's shown in. The
+  /// clef is only how it's drawn: it doesn't change the answer or the id.
   final int? midi;
+  final Clef clef;
 
   const FlashCard(
-      {required this.id, required this.label, required this.positions, this.midi});
+      {required this.id,
+      required this.label,
+      required this.positions,
+      this.midi,
+      this.clef = Clef.bass});
+
+  FlashCard inClef(Clef c) => c == clef
+      ? this
+      : FlashCard(id: id, label: label, positions: positions, midi: midi, clef: c);
 
   double get freq => 440.0 * math.pow(2, (midi! - 69) / 12);
 
@@ -131,24 +145,36 @@ abstract class FlashDeck {
   }
 }
 
-/// Level 1: the seven positions, by number.
+/// Position Flash: the positions 1–[maxPosition], by number.
 class PositionDeck extends FlashDeck {
+  final int maxPosition;
+
+  PositionDeck({this.maxPosition = 7});
+
   @override
-  final List<FlashCard> cards = [
-    for (var p = 1; p <= 7; p++)
+  late final List<FlashCard> cards = [
+    for (var p = 1; p <= maxPosition; p++)
       FlashCard(id: 'p$p', label: '$p', positions: {p}),
   ];
 }
 
-/// Level 2: the notes [lowMidi]–[highMidi] (F2–F4), each answered by any
+/// The note games: the notes [lowMidi]–[highMidi], each answered by any
 /// position that plays it on partials [minPartial]–[maxPartial] of a B♭
-/// tenor trombone.
+/// tenor trombone, shown in one of [clefs] (picked at random per card).
 class NoteDeck extends FlashDeck {
-  static const int lowMidi = 41, highMidi = 65; // F2, F4
-  static const int minPartial = 2, maxPartial = 6;
+  final int lowMidi, highMidi, maxPartial;
+  final List<Clef> clefs;
+  static const int minPartial = 2;
 
-  /// MIDI note of each partial in 1st position, from the 2nd (B♭2).
-  static const _firstPosition = {2: 46, 3: 53, 4: 58, 5: 62, 6: 65};
+  NoteDeck(
+      {this.lowMidi = 41, // F2
+      this.highMidi = 65, // F4
+      this.maxPartial = 6,
+      this.clefs = const [Clef.bass]});
+
+  /// MIDI note of each partial in 1st position, from the 2nd (B♭2), as in
+  /// the app's chart (TromboneChart).
+  static const _firstPosition = {2: 46, 3: 53, 4: 58, 5: 62, 6: 65, 7: 68, 8: 70};
 
   /// Spelled the usual way for trombone (flats).
   static const _names = [
@@ -157,18 +183,28 @@ class NoteDeck extends FlashDeck {
 
   static String noteName(int midi) => '${_names[midi % 12]}${midi ~/ 12 - 1}';
 
-  /// Positions (1–7) that play [midi] on partials 2–6.
-  static Set<int> positionsFor(int midi) => {
+  /// Positions (1–7) that play [midi] on partials 2–[maxPartial].
+  static Set<int> positionsFor(int midi, {int maxPartial = 6}) => {
         for (var n = minPartial; n <= maxPartial; n++)
           if (_firstPosition[n]! - midi case final d when d >= 0 && d <= 6) d + 1,
       };
 
   @override
-  final List<FlashCard> cards = [
+  late final List<FlashCard> cards = [
     for (var m = lowMidi; m <= highMidi; m++)
       FlashCard(
-          id: 'n$m', label: noteName(m), positions: positionsFor(m), midi: m),
+          id: 'n$m',
+          label: noteName(m),
+          positions: positionsFor(m, maxPartial: maxPartial),
+          midi: m,
+          clef: clefs.first),
   ];
+
+  @override
+  FlashCard deal(int from, FlashCard? last, math.Random rng) {
+    final c = super.deal(from, last, rng);
+    return clefs.length == 1 ? c : c.inClef(clefs[rng.nextInt(clefs.length)]);
+  }
 }
 
 class CardResult {

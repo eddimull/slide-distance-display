@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -61,23 +62,79 @@ void main() {
   });
 
   group('unlocking', () {
-    test('Level 2 opens at 15,000 in Position Flash, Level 3 at 15,000 in Note Flash',
-        () async {
+    LearnGame game(String title) => learnGames.firstWhere((g) => g.title == title);
+
+    test('each game is its own ladder, opened at 15,000 a level', () async {
       final s = await freshScores();
-      expect(unlockedLevels(learnLevels, s), [true, false, false]);
-      await s.submit(FlashCardScreen.gameId, entry(14999));
-      expect(unlockedLevels(learnLevels, s), [true, false, false]);
-      await s.submit(FlashCardScreen.gameId, entry(15000));
-      expect(unlockedLevels(learnLevels, s), [true, true, false]);
-      // Level 3 opens at 15,000 in Note Flash, but has no game yet.
-      await s.submit(noteFlash.id, entry(15000));
-      expect(unlockedLevels(learnLevels, s), [true, true, true]);
+      final pos = game('Position Flash'), notes = game('Note Flash'),
+          play = game('Play the Note');
+      // Every game's Level 1 is open from the start.
+      expect(pos.open(s), [true, false]);
+      expect(notes.open(s), [true, false, false, false, false, false]);
+      expect(play.open(s), [true, false, false, false, false, false]);
+      expect(notes.current(s), noteFlash);
+
+      await s.submit(positionFlash.id, entry(14999));
+      expect(pos.open(s), [true, false]);
+      await s.submit(positionFlash.id, entry(15000));
+      expect(pos.open(s), [true, true]);
+      expect(pos.current(s), positionFlashAll);
+      // Position Flash doesn't open anything in the other games.
+      await s.submit(positionFlashAll.id, entry(15000));
+      expect(notes.open(s), [true, false, false, false, false, false]);
+      expect(play.open(s), [true, false, false, false, false, false]);
+
+      // Note Flash's levels don't open Play the Note's, nor the other way.
+      await s.submit(noteFlashLevels[0].id, entry(16000));
+      await s.submit(noteFlashLevels[1].id, entry(15000));
+      expect(notes.open(s), [true, true, true, false, false, false]);
+      expect(notes.current(s), noteFlashLevels[2]);
+      expect(play.open(s), [true, false, false, false, false, false]);
+      await s.submit(playTheNoteLevels[0].id, entry(15000));
+      expect(play.open(s), [true, true, false, false, false, false]);
+      expect(notes.open(s), [true, true, true, false, false, false]);
     });
 
-    testWidgets('the hub shows progress toward the next level', (tester) async {
+    test('the levels: ids, ranges and names', () {
+      expect({for (final l in allGameSpecs) l.id}, hasLength(14));
+      expect(positionFlash.deck().cards.map((c) => c.label), ['1', '2', '3', '4']);
+      expect(positionFlashAll.deck().cards, hasLength(7));
+      final octave = noteFlashLevels[0].deck().cards;
+      expect([octave.first.label, octave.last.label], ['B♭2', 'B♭3']);
+      expect(noteFlashLevels[0].showNames, isTrue);
+      expect(noteFlashLevels[1].showNames, isFalse);
+      final wide = noteFlashLevels[2].deck().cards;
+      expect([wide.first.label, wide.last.label], ['E2', 'B♭4']);
+      // Every note has a position, E2 only 7th and B♭4 only 1st.
+      expect(wide.every((c) => c.positions.isNotEmpty), isTrue);
+      expect(wide.first.positions, {7});
+      expect(wide.last.positions, {1});
+      expect(wide.firstWhere((c) => c.label == 'F4').positions, {1, 4, 6});
+      expect(noteFlashLevels[3].deck().cards.first.clef, Clef.tenor);
+      expect(noteFlashLevels[4].deck().cards.first.clef, Clef.alto);
+      for (final (i, l) in playTheNoteLevels.indexed) {
+        expect(l.needsPitch, isTrue);
+        expect(l.levelName, noteFlashLevels[i].levelName);
+      }
+    });
+
+    test('All clefs deals every clef', () {
+      final deck = noteFlashLevels[5].deck();
+      final rng = math.Random(1);
+      FlashCard? last;
+      final seen = <Clef>{};
+      for (var i = 0; i < 60; i++) {
+        last = deck.deal(1, last, rng);
+        seen.add(last.clef);
+      }
+      expect(seen, Clef.values.toSet());
+    });
+
+    testWidgets('the tab: a card per game, its level and progress', (tester) async {
       tall(tester);
       final s = await freshScores();
-      await s.submit(FlashCardScreen.gameId, entry(10800));
+      await s.submit(positionFlash.id, entry(16000));
+      await s.submit(positionFlashAll.id, entry(10800));
       await tester.pumpWidget(MaterialApp(
         home: LearnScreen(
           learn: LearnContext(
@@ -85,11 +142,25 @@ void main() {
         ),
       ));
       expect(find.text('Position Flash'), findsOneWidget);
-      expect(find.text('10,800'), findsOneWidget); // best score
-      expect(find.text('Score 15,000 in Position Flash to unlock'), findsOneWidget);
-      expect(find.text('10,800 / 15,000'), findsOneWidget);
-      expect(find.text('Unlocks from Level 2'), findsNothing);
-      expect(find.textContaining('Unlocks from Level 2'), findsOneWidget);
+      expect(find.text('Level 2 of 2 · All seven'), findsOneWidget);
+      expect(find.text('10,800'), findsOneWidget);
+      expect(find.text('Level 1 of 6 · One octave'), findsNWidgets(2));
+      expect(find.widgetWithText(FilledButton, 'Play'), findsNWidgets(3));
+
+      // A game's levels: passed, current, locked.
+      await tester.tap(find.text('Position Flash'));
+      await tester.pumpAndSettle();
+      expect(find.byType(LearnLevelsScreen), findsOneWidget);
+      expect(find.text('LEVEL 2 · NOW'), findsOneWidget);
+      expect(find.text('16,000'), findsOneWidget);
+      expect(find.text('Play Level 2 · All seven'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Note Flash'));
+      await tester.pumpAndSettle();
+      expect(find.text('LEVEL 1 · NOW'), findsOneWidget);
+      expect(find.text('15,000 in Level 1 opens it'), findsOneWidget);
+      expect(find.text('Play Level 1 · One octave'), findsOneWidget);
     });
 
     testWidgets('not connected: no playing', (tester) async {
@@ -103,8 +174,54 @@ void main() {
         ),
       ));
       expect(find.text('Connect the slide pod to play.'), findsOneWidget);
-      final play = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Play'));
-      expect(play.onPressed, isNull);
+      for (final b in tester.widgetList<FilledButton>(find.widgetWithText(FilledButton, 'Play'))) {
+        expect(b.onPressed, isNull);
+      }
+    });
+
+    testWidgets('not connected: the prompt connects, and Play turns on',
+        (tester) async {
+      tall(tester);
+      final s = await freshScores();
+      final connection = ValueNotifier(false);
+      final searching = ValueNotifier(false);
+      var connects = 0;
+      final learn = LearnContext(
+          frames: const Stream.empty(),
+          cal: SlideCalibration(),
+          scores: s,
+          connection: connection,
+          searching: searching,
+          connect: () {
+            connects++;
+            searching.value = true;
+          });
+      await tester.pumpWidget(MaterialApp(
+          home: LearnScreen(connected: false, learn: learn)));
+      await tester.tap(find.text('Connect the slide pod to play'));
+      expect(connects, 1);
+      // Searching: it says so, and doesn't start another search.
+      await tester.pump();
+      expect(find.text('Searching for the slide pod…'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await tester.tap(find.text('Searching for the slide pod…'));
+      expect(connects, 1);
+      searching.value = false; // nothing found
+      await tester.pump();
+      expect(find.text('Connect the slide pod to play'), findsOneWidget);
+
+      // On a game's levels, the same; then the pod connects.
+      await tester.tap(find.text('Position Flash'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Connect the slide pod to play'));
+      expect(connects, 2);
+      FilledButton play() =>
+          tester.widget(find.widgetWithText(FilledButton, 'Play Level 1 · First four'));
+      expect(play().onPressed, isNull);
+      connection.value = true;
+      await tester.pump();
+      expect(find.text('Connect the slide pod to play'), findsNothing);
+      expect(play().onPressed, isNotNull);
     });
   });
 
@@ -183,14 +300,14 @@ void main() {
           spec: noteFlash,
           clock: () => now),
     ));
-    expect(find.text('LEVEL 2 · READING NOTES'), findsOneWidget);
+    expect(find.text('LEVEL 1 · ONE OCTAVE'), findsOneWidget);
 
     Future<void> slideTo(double semis) async {
       frames.add((t: DateTime.now(), mm: mmAtSemis(cal, semis), freq: null));
       await tester.pump();
     }
 
-    final deck = NoteDeck();
+    final deck = noteFlash.deck();
     FlashCard shown() => deck.cards.firstWhere((c) => tester
         .widgetList<Text>(find.byType(Text))
         .any((t) => t.style?.fontSize == 30 && t.data == c.label));
@@ -200,7 +317,7 @@ void main() {
     await tester.pump();
     now += 3100;
     await slideTo(0);
-    expect(find.byType(BassClefNote), findsOneWidget);
+    expect(find.byType(StaffNote), findsOneWidget);
     expect(find.text('Any position that plays it counts.'), findsOneWidget);
 
     bool done() => find.text('Play again').evaluate().isNotEmpty;
@@ -225,5 +342,56 @@ void main() {
     expect(scores.best(FlashCardScreen.gameId), isNull); // its own table
     await frames.close();
   });
-}
 
+  testWidgets('No names: the name shows once the card is answered or missed',
+      (tester) async {
+    tall(tester);
+    final scores = await freshScores();
+    final cal = SlideCalibration();
+    final frames = StreamController<CalFrame>.broadcast();
+    var now = 0;
+    final spec = noteFlashLevels[1];
+    await tester.pumpWidget(MaterialApp(
+      home: FlashCardScreen(
+          frames: frames.stream,
+          cal: cal,
+          scores: scores,
+          spec: spec,
+          rng: math.Random(4),
+          clock: () => now),
+    ));
+    Future<void> slideTo(double semis) async {
+      frames.add((t: DateTime.now(), mm: mmAtSemis(cal, semis), freq: null));
+      await tester.pump();
+    }
+
+    final deck = spec.deck();
+    bool named(FlashCard c) => tester
+        .widgetList<Text>(find.byType(Text))
+        .any((t) => t.style?.fontSize == 30 && t.data == c.label);
+    FlashCard? shown() => deck.cards.where(named).firstOrNull;
+
+    await slideTo(0);
+    await tester.tap(find.text('Start'));
+    await tester.pump();
+    now += 3100;
+    await slideTo(0);
+    expect(find.byType(StaffNote), findsOneWidget);
+    expect(shown(), isNull, reason: 'no name while the card is up');
+
+    // Miss it: the name, and where it is.
+    now += spec.rules.timeoutMs + 40;
+    await slideTo(0);
+    final missed = shown();
+    expect(missed, isNotNull);
+    expect(find.textContaining("Missed · it's in "), findsOneWidget);
+    expect(find.textContaining(ordinalPos((missed!.positions.toList()..sort()).first)),
+        findsWidgets);
+
+    // The next card: unnamed again until it's found.
+    now += spec.rules.feedbackMs + 40;
+    await slideTo(0);
+    expect(shown(), isNull);
+    await frames.close();
+  });
+}

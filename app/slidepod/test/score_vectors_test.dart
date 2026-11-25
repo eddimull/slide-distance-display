@@ -69,8 +69,11 @@ Map<String, Object?> playRound(FlashGameSpec spec, int seed, {bool fast = false}
 void main() {
   test('score vectors are current', () {
     final rounds = [
-      for (final spec in [positionFlash, noteFlash, playTheNote])
-        for (var seed = 1; seed <= 4; seed++) playRound(spec, seed),
+      for (final spec in allGameSpecs)
+        for (var seed = 1;
+            seed <= ([positionFlash, noteFlash, playTheNote].contains(spec) ? 4 : 2);
+            seed++)
+          playRound(spec, seed),
       for (final spec in [positionFlash, noteFlash, playTheNote])
         playRound(spec, 9, fast: true),
     ];
