@@ -60,6 +60,7 @@ dev_dependencies:
   flutter_blue_plus_platform_interface: ^9.0.4
   plugin_platform_interface: ^2.1.8
   share_plus_platform_interface: ^7.2.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -125,3 +126,23 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# App icons on every platform, from assets/icon/ (regenerate with
+#   dart run flutter_launcher_icons
+# after changing them).
+flutter_launcher_icons:
+  image_path: assets/icon/icon.png
+  android: true
+  adaptive_icon_background: "#0F1115"
+  adaptive_icon_foreground: assets/icon/icon_foreground.png
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: true
+    background_color: "#0F1115"
+    theme_color: "#0F1115"
+  macos:
+    generate: true
+  windows:
+    generate: true
+    icon_size: 256
