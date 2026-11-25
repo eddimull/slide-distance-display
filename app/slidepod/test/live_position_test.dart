@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:slidepod/flash_card_game.dart';
+import 'package:slidepod/flash_card_screen.dart';
 import 'package:slidepod/live_position.dart';
 import 'package:slidepod/trombone_chart.dart';
 
@@ -38,4 +42,35 @@ void main() {
       expect(live.update(2.55), 4);
     });
   });
+
+  test('Note Flash v2: within ±0.6 too', () {
+    expect(noteFlash.rulesVersion, 2);
+    expect(noteFlash.rules.tolerance, 0.6);
+  });
+
+  test('Position Flash v2: within ±0.6 counts (7th landed at 5.45)', () {
+    expect(positionFlash.rulesVersion, 2);
+    expect(positionFlash.rules.tolerance, 0.6);
+    final round = FlashCardRound(rules: positionFlash.rules, deck: _Seventh());
+    var now = 0;
+    round.start(now);
+    while (round.phase != FlashPhase.card) {
+      round.update(now += 20, 0);
+    }
+    final shown = now;
+    while (round.phase == FlashPhase.card) {
+      round.update(now += 20, 5.45);
+    }
+    expect(round.results.single.hit, isTrue);
+    expect(round.results.single.ms, 20);
+    expect(now - shown, greaterThanOrEqualTo(positionFlash.rules.holdMs));
+  });
+}
+
+class _Seventh extends FlashDeck {
+  @override
+  List<FlashCard> get cards =>
+      [const FlashCard(id: 'p7', label: '7', positions: {7})];
+  @override
+  FlashCard deal(int from, FlashCard? last, math.Random rng) => cards.single;
 }

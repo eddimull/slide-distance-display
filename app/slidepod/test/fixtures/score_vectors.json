@@ -4,7 +4,7 @@
     {
       "name": "position_flash seed 1",
       "game": "position_flash",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "p1",
@@ -137,7 +137,7 @@
     {
       "name": "position_flash seed 2",
       "game": "position_flash",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "p4",
@@ -270,7 +270,7 @@
     {
       "name": "position_flash seed 3",
       "game": "position_flash",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "p3",
@@ -382,7 +382,7 @@
     {
       "name": "position_flash seed 4",
       "game": "position_flash",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "p2",
@@ -494,7 +494,7 @@
     {
       "name": "note_flash seed 1",
       "game": "note_flash",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "n53",
@@ -627,7 +627,7 @@
     {
       "name": "note_flash seed 2",
       "game": "note_flash",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "n41",
@@ -760,7 +760,7 @@
     {
       "name": "note_flash seed 3",
       "game": "note_flash",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "n62",
@@ -872,7 +872,7 @@
     {
       "name": "note_flash seed 4",
       "game": "note_flash",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "n41",
@@ -1474,7 +1474,7 @@
     {
       "name": "position_flash seed 9 fast",
       "game": "position_flash",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "p4",
@@ -1649,7 +1649,7 @@
     {
       "name": "note_flash seed 9 fast",
       "game": "note_flash",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "n51",
