@@ -8,6 +8,12 @@
  * run through YIN pitch detection every 20 ms.
  * Serial CSV output mirrors the BLE payload for debugging.
  *
+ * Auto-off: after SLIDEPOD_AUTO_OFF_MIN minutes (default 10) on battery with
+ * the slide still, no app connected and no update coming in, the pod blinks
+ * blue three times and goes into deep sleep with no wake source. Switching
+ * it off and on starts it again (the switch cuts power after the battery
+ * and USB are combined, so it always resets the chip). See auto_off_tick().
+ *
  * BLE service: GATT notify, 8-byte payload (raw_mm + filt_mm + pos + pitch).
  * Each pod has a serial (its chip's factory MAC, 12 hex digits) and a name,
  * "SlidePod" plus the serial's last 4 digits until the app renames it. It
@@ -23,6 +29,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <esp_sleep.h>
 #include "pitch_yin.h"
 
 // ── Sensor library — switched at compile time ────────────────────────────
@@ -33,6 +40,7 @@
   static bool     mock_sweep = true;
   static bool tof_init()  { return true; }
   static void tof_start() {}
+  static void tof_stop()  {}
   static uint16_t tof_read() {
     if (mock_sweep) {
       mock_dist += mock_step;
@@ -155,6 +163,12 @@
   }
   static void tof_start() {
     tof_set_far(false);
+  }
+  // Stop ranging: the sensor drops to software standby (a few µA). XSHUT is
+  // left alone: its 10k pull-up keeps it high (held low, it would sink
+  // ~330 µA through the pull-up).
+  static void tof_stop() {
+    tof.stopContinuous();
   }
   static uint16_t tof_read() {
     const uint16_t mm = tof.read();
@@ -400,7 +414,7 @@ static volatile uint8_t g_ledR = 0, g_ledG = 0, g_ledB = 0;
 #define SLIDEPOD_OTA_DATA_UUID "d5e40008-7537-4463-a441-27f2d3140fab"
 
 // Firmware version, reported in the info characteristic.
-#define SLIDEPOD_FW "0.5.3"
+#define SLIDEPOD_FW "0.5.4"
 
 // Longest name, in UTF-8 bytes: fits the scan response (31 bytes) with room
 // to spare, and the app's lists.
@@ -690,6 +704,11 @@ static OtaDataWrite otaDataCb;
 
 static bool ota_busy() { return g_otaActive; }
 
+static bool ble_connected() {
+  NimBLEServer* srv = NimBLEDevice::getServer();
+  return srv && srv->getConnectedCount() > 0;
+}
+
 // ── Rollback ────────────────────────────────────────────────────────────
 // After an update the bootloader starts the new firmware on probation: if
 // it resets before saying it works, the bootloader goes back to the
@@ -874,6 +893,7 @@ static void ble_notify(uint16_t raw, uint16_t filt, uint16_t pos10k,
 static void ble_init() {}
 static void ble_keep_fast() {}
 static bool ota_busy() { return false; }
+static bool ble_connected() { return false; }
 static void ota_poll() {}
 static void ota_confirm() {}
 static void ble_notify(uint16_t, uint16_t, uint16_t, uint16_t) {}
@@ -1002,6 +1022,52 @@ static void ble_power(bool notify) {
 static void ble_power(bool) {}
 #endif
 
+// ── Auto-off ─────────────────────────────────────────────────────────────
+// A pod left on (a student forgetting the switch in the case) would run its
+// battery flat in about 6 h. After AUTO_OFF_MS on battery with the slide
+// still, no app connected and no update coming in, it turns itself off:
+// deep sleep with no wake source (a few hundred µA for the whole board).
+// The switch is the way back on.
+#ifndef SLIDEPOD_AUTO_OFF_MIN
+#define SLIDEPOD_AUTO_OFF_MIN 10
+#endif
+static constexpr uint32_t AUTO_OFF_MS = SLIDEPOD_AUTO_OFF_MIN * 60UL * 1000UL;
+static constexpr int AUTO_OFF_MOVE_MM = 15;   // smaller changes are noise
+
+static uint32_t g_lastActivityMs = 0;
+static int g_activityMm = -1;   // the reading at the last movement
+
+static void auto_off() {
+  Serial.printf("# auto-off: idle %d min on battery; switch off and on to start\n",
+                SLIDEPOD_AUTO_OFF_MIN);
+  tof_stop();
+  // Three blue blinks, so it's clear the pod turned itself off.
+  for (int i = 0; i < 3; i++) {
+    setRgb(false, false, true);
+    delay(150);
+    setRgb(false, false, false);
+    delay(150);
+  }
+  // High-Z the LED pins so nothing sinks current through the LEDs asleep.
+  pinMode(PIN_LED_R, INPUT);
+  pinMode(PIN_LED_G, INPUT);
+  pinMode(PIN_LED_B, INPUT);
+  Serial.flush();
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  esp_deep_sleep_start();   // doesn't return: only a power cycle wakes it
+}
+
+// Once per loop, with the reading (-1 when there was no valid one).
+static void auto_off_tick(int mm) {
+  const uint32_t now = millis();
+  const bool moved = mm >= 0 &&
+      (g_activityMm < 0 || abs(mm - g_activityMm) > AUTO_OFF_MOVE_MM);
+  if (moved) g_activityMm = mm;
+  // On USB the battery isn't used: stay on, ready for the app.
+  if (moved || ble_connected() || ota_busy() || g_usbPower) g_lastActivityMs = now;
+  if (now - g_lastActivityMs > AUTO_OFF_MS) auto_off();
+}
+
 void setup() {
   Serial.begin(115200);
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
@@ -1056,6 +1122,7 @@ void setup() {
   Serial.printf("# battery %u mV, %u%%, usb=%d\n", g_batteryMv, g_batteryPct, g_usbPower);
 
   setRgb(false, true, false);   // green = ready
+  g_lastActivityMs = millis();
   Serial.println("# SlidePod ready");
   Serial.println("# dist_raw_mm,position,pitch_hz,piezo_rms");
 }
@@ -1095,8 +1162,10 @@ void loop() {
                (uint16_t)(g_pitchHz * 10.0f + 0.5f));
     Serial.printf("# no reading status=%u mode=%s\n", tof_status_code(),
                   tof_mode_name());
+    auto_off_tick(-1);
     return;
   }
+  auto_off_tick(raw);
 
   float pos  = constrain(
     ((float)raw - DIST_CLOSED) / (DIST_OPEN - DIST_CLOSED),
