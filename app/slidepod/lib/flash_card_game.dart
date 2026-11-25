@@ -232,10 +232,37 @@ class FlashCardRound {
   final FlashDeck deck;
   final math.Random _rng;
 
+  /// Where the round says what it's deciding (cards, readings, holds
+  /// starting and breaking, and why), for working out why a card won't
+  /// take. Null: quiet. Never changes the scoring.
+  final void Function(String)? log;
+
   FlashCardRound(
-      {this.rules = const FlashCardRules(), FlashDeck? deck, math.Random? rng})
+      {this.rules = const FlashCardRules(),
+      FlashDeck? deck,
+      math.Random? rng,
+      this.log})
       : deck = deck ?? PositionDeck(),
         _rng = rng ?? math.Random();
+
+  /// Logging only: when the last reading line went out, and whether this
+  /// gap in the readings has been reported.
+  int _loggedAt = -1 << 31;
+  bool _gapLogged = false;
+
+  /// A reading line at most this often while a card is up.
+  static const logEveryMs = 200;
+
+  void _log(int now, String msg) =>
+      log?.call('[flash] +${card == null ? 0 : now - _shownAt}ms $msg');
+
+  static String _f(double? x) => x == null ? '—' : x.toStringAsFixed(2);
+
+  /// Where the slide has to be for each of the card's positions.
+  String _windows() => [
+        for (final p in card!.positions)
+          '$p: ${_f(p - 1 - rules.tolerance)}–${_f(p - 1 + rules.tolerance)}'
+      ].join(', ');
 
   FlashPhase phase = FlashPhase.idle;
   final results = <CardResult>[];
@@ -332,7 +359,9 @@ class FlashCardRound {
   /// [semis] is the slide's extension (0 = 1st, 6 = 7th), null when the
   /// sensor has no reading (a blind sensor can't confirm a hold). [freq]
   /// is the pitch heard (playing levels; null = silence).
-  void update(int now, double? semis, {double? freq}) {
+  ///
+  /// [mm] is the raw sensor reading behind [semis], for the log only.
+  void update(int now, double? semis, {double? freq, double? mm}) {
     if (semis != null) {
       _at = (1 + semis.round()).clamp(1, 7);
       _seenAt = now;
@@ -367,6 +396,7 @@ class FlashCardRound {
           // still where it last was, so the hold goes on.
           zone = _enteredPos;
         }
+        final inRange = zone;
         double? cents;
         if (rules.needsPitch) {
           cents = freq == null || freq <= 30 ? null : card!.centsOff(freq);
@@ -374,15 +404,20 @@ class FlashCardRound {
           // The right note, sounding, or it isn't there yet.
           if (cents == null || cents.abs() > rules.pitchGateCents!) zone = null;
         }
+        if (log != null) _logFrame(now, semis, mm, inRange, zone, cents);
         if (zone != null) {
           if (zone != _enteredPos) {
             _enteredAt = now;
             _enteredPos = zone;
             _holdCents.clear();
+            _log(now, 'hold starts in $zone at ${_f(semis)} '
+                '(needs ${rules.holdMs}ms)');
           }
           if (cents != null) _holdCents.add(cents);
           // A gap can carry a hold, but it finishes on a real reading.
           if (now - _enteredAt! >= rules.holdMs && semis != null) {
+            _log(now, 'HIT $zone: held ${now - _enteredAt!}ms, '
+                'arrived at ${_enteredAt! - _shownAt}ms');
             _finish(now, _enteredAt! - _shownAt, zone);
             return;
           }
@@ -390,7 +425,51 @@ class FlashCardRound {
           _enteredAt = null;
           _enteredPos = null;
         }
-        if (now - _shownAt >= rules.timeoutMs) _finish(now, null, null);
+        if (now - _shownAt >= rules.timeoutMs) {
+          _log(now, 'MISS: timed out after ${rules.timeoutMs}ms, slide at '
+              '${_f(semis)} (${_windows()})');
+          _finish(now, null, null);
+        }
+    }
+  }
+
+  /// Logging only: why the hold is (or isn't) going, on a change, and a
+  /// reading line every [logEveryMs].
+  void _logFrame(int now, double? semis, double? mm, int? inRange, int? zone,
+      double? cents) {
+    if (semis == null) {
+      if (!_gapLogged) {
+        _gapLogged = true;
+        _log(now, _enteredPos == null
+            ? 'no reading from the sensor (mm ${_f(mm)})'
+            : 'no reading: carrying the hold in $_enteredPos for up to '
+                '${blindGapMs}ms');
+      }
+      if (_enteredPos != null && zone == null) {
+        _log(now, 'hold in $_enteredPos broken: no reading for '
+            '${now - (_seenAt ?? now)}ms (more than ${blindGapMs}ms)');
+      }
+      return;
+    }
+    if (_gapLogged) {
+      _gapLogged = false;
+      _log(now, 'reading back: ${_f(semis)} (mm ${_f(mm)})');
+    }
+    if (_enteredPos != null && zone != _enteredPos) {
+      _log(now, zone != null
+          ? 'hold in $_enteredPos broken: slide moved to $zone (${_f(semis)})'
+          : inRange == null
+              ? 'hold in $_enteredPos broken: slide at ${_f(semis)}, outside '
+                  '${_windows()}'
+              : 'hold in $_enteredPos broken: pitch ${_f(cents)}¢, outside '
+                  '±${rules.pitchGateCents}¢');
+    }
+    if (now - _loggedAt >= logEveryMs) {
+      _loggedAt = now;
+      final pitch = rules.needsPitch ? ' pitch ${_f(cents)}¢' : '';
+      _log(now, 'slide ${_f(semis)} (mm ${_f(mm)}, nearest '
+          '${(1 + semis.round()).clamp(1, 7)})$pitch → '
+          '${zone != null ? 'holding $zone ${now - (_enteredAt ?? now)}ms' : inRange != null ? 'in $inRange, pitch not there' : 'not in ${_windows()}'}');
     }
   }
 
@@ -398,6 +477,10 @@ class FlashCardRound {
     _from = _at ?? 1;
     card = deck.deal(_from, card, _rng);
     _shownAt = now;
+    _loggedAt = -1 << 31;
+    _gapLogged = false;
+    _log(now, 'card ${card!.label} from $_from: slide (0 = 1st) must be in '
+        '${_windows()} for ${rules.holdMs}ms');
     _enteredAt = null;
     _enteredPos = null;
     _holdCents.clear();

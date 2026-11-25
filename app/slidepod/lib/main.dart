@@ -14,6 +14,7 @@ import 'high_scores.dart';
 import 'high_scores_screen.dart';
 import 'instruments_screen.dart';
 import 'learn_screen.dart';
+import 'live_position.dart';
 import 'live_view.dart';
 import 'one_euro.dart';
 import 'pitch_detector.dart';
@@ -233,6 +234,7 @@ class _HomePageState extends State<HomePage> {
           if (!c) {
             _velocity = 0;
             _posHistory.clear();
+            _livePos.reset();
             _smooth.reset();
             _pitchHistory.clear();
             _lip = null;
@@ -327,7 +329,8 @@ class _HomePageState extends State<HomePage> {
       pitchHz: raw?.pitchHz,
       hasPiezo: raw?.hasPiezo ?? _data.hasPiezo,
     );
-    _syncLed(_positionToSlide(d.position));
+    _slide = _livePos.update(d.position * 6, freq: freq);
+    _syncLed(_slide);
     final dt = now.difference(_prevTime).inMicroseconds / 1e6;
     if (dt > 0.001) {
       final delta = (d.position - _prevPosition).abs();
@@ -476,7 +479,7 @@ class _HomePageState extends State<HomePage> {
   void _setEasy(bool easy) {
     setState(() => _easy = easy);
     _prefs?.setBool(_easyKey, easy);
-    _syncLed(_positionToSlide(_data.position));
+    _syncLed(_slide);
   }
 
   /// In Easy mode the pod's LED shows the position's colour; otherwise the
@@ -643,6 +646,7 @@ class _HomePageState extends State<HomePage> {
     _connected = false;
     _velocity = 0;
     _posHistory.clear();
+    _livePos.reset();
     _smooth.reset();
     _pitchHistory.clear();
     // Mock mode fakes _detectedFreq; don't carry it over to the real pod.
@@ -894,14 +898,14 @@ class _HomePageState extends State<HomePage> {
           ? 'mic'
           : null;
 
-  int _positionToSlide(double pos) {
-    // pos 0.0 = 1st position, 1.0 = 7th → six intervals, not seven.
-    return (1 + (pos * 6.0).round()).clamp(1, 7);
-  }
+  /// The position shown: within ±0.6 of one counts as in it, and a note
+  /// sounding picks the one it's in tune for ([LivePosition]).
+  final _livePos = LivePosition();
+  int _slide = 1;
 
   @override
   Widget build(BuildContext context) {
-    final slideNum = _connected ? _positionToSlide(_data.position) : null;
+    final slideNum = _connected ? _slide : null;
     // The smoothed speed only decays toward zero, and each small step of the
     // held position adds a blip; below 0.2 positions/s the slide is still.
     final velocityPosPerSec = _velocity * 6.0 < 0.2 ? 0.0 : _velocity * 6.0;
@@ -974,6 +978,7 @@ class _HomePageState extends State<HomePage> {
                 },
                 onConnect: _scanning ? null : _scanAndConnect,
                 reading: LiveReading(
+                  at: slideNum,
                   position: _data.position,
                   mm: _blind ? null : _data.filtMm,
                   note: activeNote,

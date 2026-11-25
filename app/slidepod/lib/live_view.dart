@@ -39,10 +39,15 @@ class LiveReading {
     this.freq,
     this.freqSource,
     this.speed = 0,
+    this.at,
   });
 
+  /// The position to show, when the caller has decided it (Live's ±0.6,
+  /// [LivePosition]); otherwise the nearest.
+  final int? at;
+
   /// 1–7.
-  int get slide => (1 + (position * 6).round()).clamp(1, 7);
+  int get slide => at ?? (1 + (position * 6).round()).clamp(1, 7);
 
   /// 1.00–7.00.
   double get exact => 1 + position * 6;

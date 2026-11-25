@@ -68,6 +68,12 @@ const positionFlash = FlashGameSpec(
   firstStep: ('A number comes up.', 'It\'s the position to go to.'),
   notes: false,
   deck: _positions,
+  // Version 2: the slide counts within ±0.6 of the position (±0.3 before),
+  // as in Play the Note. Even calibrated, a position can read a few mm off
+  // where you put it, and far out (7th) in-tune landed ~5.75, just inside
+  // ±0.3. Positions are 1 apart, so ±0.6 can't take a wrong one.
+  rules: FlashCardRules(tolerance: 0.6),
+  rulesVersion: 2,
 );
 
 const noteFlash = FlashGameSpec(
@@ -80,6 +86,12 @@ const noteFlash = FlashGameSpec(
       'Go to a position that plays it: any one counts.'),
   notes: true,
   deck: _notes,
+  // Version 2: the slide counts within ±0.6 of the position (±0.3 before),
+  // as in the other two. Logged in 7th: B2 read 5.52–5.80 with the slide
+  // still, so the hold kept starting and breaking at 5.70 and took 3.6 s.
+  // The positions that play the same note are 3 or more apart.
+  rules: FlashCardRules(tolerance: 0.6),
+  rulesVersion: 2,
 );
 
 const playTheNote = FlashGameSpec(
@@ -212,12 +224,13 @@ class MultBadge extends StatelessWidget {
 class _FlashCardScreenState extends State<FlashCardScreen>
     with SingleTickerProviderStateMixin {
   late final FlashCardRound _round =
-      FlashCardRound(rules: _r, deck: widget.spec.deck(), rng: widget.rng);
+      FlashCardRound(
+          rules: _r, deck: widget.spec.deck(), rng: widget.rng, log: debugPrint);
   double? _freq;
   late final Ticker _ticker;
   final _clock = Stopwatch()..start();
   StreamSubscription<CalFrame>? _sub;
-  double? _semis;
+  double? _semis, _mm;
   bool _seen = false; // any reading yet
   int? _rank; // place on the table after a round
   int? _bestBefore;
@@ -237,6 +250,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
     super.initState();
     _ticker = createTicker((_) => _tick());
     _sub = widget.frames.listen((f) {
+      _mm = f.mm;
       _semis = f.mm == null ? null : widget.cal.semitonesFromMm(f.mm!);
       _freq = f.freq;
       _seen = _seen || f.mm != null;
@@ -246,7 +260,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
 
   void _tick() {
     final was = _round.phase;
-    _round.update(_now, _semis, freq: _freq);
+    _round.update(_now, _semis, freq: _freq, mm: _mm);
     if (_round.phase == FlashPhase.done && was != FlashPhase.done) {
       _ticker.stop();
       _submit();
