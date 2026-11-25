@@ -726,12 +726,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _openScores() async {
     final scores = await (_scores ??= HighScores.open());
     if (!mounted) return;
-    final open = unlockedLevels(learnLevels, scores);
-    final games = [
-      for (final (i, l) in learnLevels.indexed)
-        if (open[i] && l.gameId != null && l.build != null)
-          ScoreGame(l.gameId!, l.title, '${l.title} · Level ${l.level}'),
-    ];
+    final games = openScoreGames(scores);
     final first = games.first;
     await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => HighScoresScreen(

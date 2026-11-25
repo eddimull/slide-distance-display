@@ -33,114 +33,117 @@ class LearnContext {
       this.pod});
 }
 
-/// A level opens once the best score in [gameId] reaches [score].
+/// The score in a level that opens the next one.
+const levelUpScore = 15000;
+
+/// A game opens once the best score in [gameId] reaches [score].
 class LevelGate {
-  final String gameId, gameTitle;
+  final String gameId, label;
   final int score;
-  const LevelGate(this.gameId, this.gameTitle, this.score);
+  const LevelGate(this.gameId, this.label, [this.score = levelUpScore]);
 }
 
-/// A level in the Learn list. [build] is null for one not made yet.
-class LearnLevel {
-  final int level;
-  final String? levelName;
-  final String title;
-  final String? gameId;
-  final String blurb;
-  final String? scoring;
+/// A game in the Learn tab, with its own ladder of [levels]: each opens at
+/// [levelUpScore] in the one before it, the first once [gate] is met.
+class LearnGame {
+  final String tag, title, blurb;
 
   /// Needs the horn played (pitch), not just the slide.
   final bool needsPlaying;
-
-  /// What opens it; null = open as soon as the level before is.
+  final List<FlashGameSpec> levels;
   final LevelGate? gate;
-  final Widget Function(LearnContext c)? build;
 
-  const LearnLevel({
-    required this.level,
-    this.levelName,
+  const LearnGame({
+    required this.tag,
     required this.title,
-    this.gameId,
     required this.blurb,
-    this.scoring,
     this.needsPlaying = false,
+    required this.levels,
     this.gate,
-    this.build,
   });
+
+  /// Which levels are open.
+  List<bool> open(HighScores s) {
+    int best(String id) => s.best(id)?.score ?? 0;
+    final g = gate;
+    final out = <bool>[];
+    for (var i = 0; i < levels.length; i++) {
+      out.add(i == 0
+          ? g == null || best(g.gameId) >= g.score
+          : out[i - 1] && best(levels[i - 1].id) >= levelUpScore);
+    }
+    return out;
+  }
+
+  /// The highest open level (null: the game isn't open yet).
+  FlashGameSpec? current(HighScores s) {
+    final o = open(s);
+    final i = o.lastIndexOf(true);
+    return i < 0 ? null : levels[i];
+  }
+
+  /// What a level is called on the scores screen.
+  ScoreGame scoreGame(FlashGameSpec l) => ScoreGame(
+      l.id, '$title ${l.level}', '$title · Level ${l.level} · ${l.levelName}');
 }
 
-/// The levels, easiest first. New games go here.
-final learnLevels = <LearnLevel>[
-  LearnLevel(
-    level: 1,
-    levelName: 'Getting started',
-    title: FlashCardScreen.title,
-    gameId: FlashCardScreen.gameId,
+/// The Learn games, easiest first. Each has its own levels; the note games
+/// open once all seven positions are learnt.
+final learnGames = <LearnGame>[
+  LearnGame(
+    tag: 'POSITIONS',
+    title: 'Position Flash',
     blurb: 'A position number comes up: put the slide there and hold it. '
         'Faster scores more.',
-    build: (c) => FlashCardScreen(
-        frames: c.frames,
-        cal: c.cal,
-        scores: c.scores,
-        account: c.account,
-        pod: c.pod),
+    levels: positionFlashLevels,
   ),
-  LearnLevel(
-    level: 2,
-    levelName: noteFlash.levelName,
-    title: noteFlash.title,
-    gameId: noteFlash.id,
-    blurb: 'A note from F2 to F4 comes up on the bass clef: put the slide in '
-        'a position that plays it.',
-    gate: const LevelGate(FlashCardScreen.gameId, FlashCardScreen.title, 15000),
-    build: (c) => FlashCardScreen(
-        frames: c.frames,
-        cal: c.cal,
-        scores: c.scores,
-        account: c.account,
-        pod: c.pod,
-        spec: noteFlash),
+  LearnGame(
+    tag: 'READING NOTES',
+    title: 'Note Flash',
+    blurb: 'A note comes up on the staff: put the slide in a position that '
+        'plays it. No need to play.',
+    levels: noteFlashLevels,
+    gate: LevelGate(positionFlashAll.id, 'Position Flash Level 2'),
   ),
-  LearnLevel(
-    level: 3,
-    levelName: playTheNote.levelName,
-    title: playTheNote.title,
-    gameId: playTheNote.id,
-    blurb: 'A note from F2 to F4 comes up: play it, with the slide in a '
-        'position for it. In tune earns a bonus.',
+  LearnGame(
+    tag: 'PLAYING',
+    title: 'Play the Note',
+    blurb: 'A note comes up: play it, with the slide in a position for it. '
+        'In tune earns a bonus.',
     needsPlaying: true,
-    gate: LevelGate(noteFlash.id, noteFlash.title, 15000),
-    build: (c) => FlashCardScreen(
-        frames: c.frames,
-        cal: c.cal,
-        scores: c.scores,
-        account: c.account,
-        spec: playTheNote,
-        pod: c.pod,
-        ensureMic: c.ensureMic),
+    levels: playTheNoteLevels,
+    gate: LevelGate(positionFlashAll.id, 'Position Flash Level 2'),
   ),
 ];
 
-/// Whether each of [levels] is open: the first always; each after it once
-/// the one before is open and playable (a level with no game yet holds the
-/// rest back) and its own gate, if any, is met.
-List<bool> unlockedLevels(List<LearnLevel> levels, HighScores scores) {
-  final out = <bool>[];
-  for (final (i, l) in levels.indexed) {
-    final prev = i == 0 || (out[i - 1] && levels[i - 1].build != null);
-    final g = l.gate;
-    final met = g == null || (scores.best(g.gameId)?.score ?? 0) >= g.score;
-    out.add(prev && met);
-  }
-  return out;
+/// Every open level, for the scores screen.
+List<ScoreGame> openScoreGames(HighScores s) => [
+      for (final g in learnGames)
+        for (final (i, l) in g.levels.indexed)
+          if (g.open(s)[i]) g.scoreGame(l),
+    ];
+
+/// Plays [level] of [game]; back when the round screen closes.
+Future<void> playLevel(BuildContext context, LearnContext learn, LearnGame game,
+    FlashGameSpec level) {
+  return Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => FlashCardScreen(
+            frames: learn.frames,
+            cal: learn.cal,
+            scores: learn.scores,
+            account: learn.account,
+            pod: learn.pod,
+            spec: level,
+            ensureMic: game.needsPlaying ? learn.ensureMic : null,
+          )));
 }
 
-/// Games for learning the slide positions, each with its own high scores.
-/// Shown as the Learn tab.
+/// The Learn tab: one card per game, its current level and Play. Tap a
+/// card for the game's levels.
 class LearnScreen extends StatefulWidget {
   final LearnContext learn;
   final bool connected;
-  final List<LearnLevel>? levels;
+  final List<LearnGame>? games;
 
   /// The tab's top bar (title, pod, profile). Null: a plain one with an
   /// account button.
@@ -151,7 +154,7 @@ class LearnScreen extends StatefulWidget {
     this.topBar,
     required this.learn,
     this.connected = true,
-    this.levels,
+    this.games,
   });
 
   @override
@@ -159,27 +162,22 @@ class LearnScreen extends StatefulWidget {
 }
 
 class _LearnScreenState extends State<LearnScreen> {
-  List<LearnLevel> get _levels => widget.levels ?? learnLevels;
+  List<LearnGame> get _games => widget.games ?? learnGames;
 
-  Future<void> _play(LearnLevel l) async {
-    await Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => l.build!(widget.learn)));
+  Future<void> _play(LearnGame g, FlashGameSpec l) async {
+    await playLevel(context, widget.learn, g, l);
     if (mounted) setState(() {}); // new scores, maybe a level opened
   }
 
-  void _scores(LearnLevel l) => Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => HighScoresScreen(
-          scores: widget.learn.scores,
-          gameId: l.gameId!,
-          title: l.title,
-          subtitle: '${l.title} · Level ${l.level}',
-          account: widget.learn.account,
-        ),
-      ));
+  Future<void> _levels(LearnGame g) async {
+    await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => LearnLevelsScreen(
+            game: g, learn: widget.learn, connected: widget.connected)));
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
-    final open = unlockedLevels(_levels, widget.learn.scores);
     return Scaffold(
       backgroundColor: TakeStyle.ground,
       appBar: widget.topBar ?? AppBar(
@@ -207,12 +205,12 @@ class _LearnScreenState extends State<LearnScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(4, 0, 4, 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
             child: Text(
-                'Games for learning your slide positions. Beat your high '
-                'score, then move up a level.',
-                style: TextStyle(fontSize: 14, height: 1.45, color: TakeStyle.body)),
+                'Thirty-second games. Score ${thousands(levelUpScore)} to open '
+                'each game\'s next level.',
+                style: const TextStyle(fontSize: 14, height: 1.45, color: TakeStyle.body)),
           ),
           if (!widget.connected)
             const Padding(
@@ -220,139 +218,94 @@ class _LearnScreenState extends State<LearnScreen> {
               child: Text('Connect the slide pod to play.',
                   style: TextStyle(fontSize: 13, color: TakeStyle.warn)),
             ),
-          for (final (i, l) in _levels.indexed)
-            if (open[i] && l.build != null)
-              _gameCard(l)
-            else
-              _lockedCard(l, open[i],
-                  i == 0 || (open[i - 1] && _levels[i - 1].build != null)),
+          for (final g in _games) _gameCard(g),
         ],
       ),
     );
   }
 
-  Widget _gameCard(LearnLevel l) {
-    final best = widget.learn.scores.best(l.gameId!);
+  Widget _gameCard(LearnGame g) {
+    final s = widget.learn.scores;
+    final open = g.open(s);
+    final cur = g.current(s);
+    final best = cur == null ? null : s.best(cur.id);
+    final gate = g.gate;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
           color: TakeStyle.card, borderRadius: BorderRadius.circular(16)),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                    'LEVEL ${l.level}'
-                    '${l.levelName == null ? '' : ' · ${l.levelName!.toUpperCase()}'}',
-                    style: TakeStyle.sectionLabel),
+          InkWell(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            onTap: () => _levels(g),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 12, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(g.tag, style: TakeStyle.sectionLabel),
+                        const SizedBox(height: 4),
+                        Text(g.title,
+                            style: Seventh.screenTitle.copyWith(fontSize: 22)),
+                        const SizedBox(height: 2),
+                        Text(
+                            cur == null
+                                ? 'Opens at ${thousands(gate!.score)} in ${gate.label}'
+                                : 'Level ${cur.level} of ${g.levels.length} · ${cur.levelName}',
+                            style: const TextStyle(fontSize: 13, color: TakeStyle.muted)),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right,
+                      color: TakeStyle.muted, semanticLabel: 'Levels'),
+                ],
               ),
-              if (!l.needsPlaying) const SeventhTag('No playing'),
-            ],
+            ),
           ),
-          const SizedBox(height: 6),
-          Text(l.title, style: Seventh.screenTitle.copyWith(fontSize: 22)),
-          const SizedBox(height: 6),
-          Text(l.blurb,
-              style: const TextStyle(fontSize: 14, height: 1.45, color: TakeStyle.body)),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                LevelDots(open: open, current: cur?.level),
+                const SizedBox(height: 12),
+                Row(
                   children: [
-                    const Text('Best',
-                        style: TextStyle(fontSize: 11, color: TakeStyle.muted)),
-                    Text(best == null ? '–' : _thousands(best.score),
-                        style: TakeStyle.mono.copyWith(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            color: TakeStyle.text)),
+                    Expanded(
+                      child: cur == null
+                          ? _gateProgress(gate!)
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                    cur.level < g.levels.length
+                                        ? 'Best · ${thousands(levelUpScore)} opens Level ${cur.level + 1}'
+                                        : 'Best',
+                                    style: const TextStyle(
+                                        fontSize: 11, color: TakeStyle.muted)),
+                                Text(best == null ? '–' : thousands(best.score),
+                                    style: TakeStyle.mono.copyWith(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w600,
+                                        color: TakeStyle.text)),
+                              ],
+                            ),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton(
+                      style: FilledButton.styleFrom(minimumSize: const Size(96, 48)),
+                      onPressed: cur != null && widget.connected
+                          ? () => _play(g, cur)
+                          : null,
+                      child: const Text('Play'),
+                    ),
                   ],
                 ),
-              ),
-              TextButton(
-                onPressed: () => _scores(l),
-                child: const Text('Scores'),
-              ),
-              const SizedBox(width: 4),
-              FilledButton(
-                style: FilledButton.styleFrom(minimumSize: const Size(96, 48)),
-                onPressed: widget.connected ? () => _play(l) : null,
-                child: const Text('Play'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _lockedCard(LearnLevel l, bool open, bool prevOpen) {
-    final g = l.gate;
-    final best = g == null ? null : widget.learn.scores.best(g.gameId)?.score ?? 0;
-    final String need;
-    if (open) {
-      need = 'Unlocked. The game is on its way.';
-    } else if (g != null && prevOpen) {
-      need = 'Score ${_thousands(g.score)} in ${g.gameTitle} to unlock';
-    } else {
-      need = 'Unlocks from Level ${l.level - 1}';
-    }
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Seventh.ground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: TakeStyle.line),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(open ? Icons.lock_open_outlined : Icons.lock_outline,
-              size: 22, color: TakeStyle.muted),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('LEVEL ${l.level}', style: TakeStyle.sectionLabel),
-                Text(l.title,
-                    style: Seventh.screenTitle
-                        .copyWith(fontSize: 18, color: TakeStyle.body)),
-                const SizedBox(height: 2),
-                Text(
-                    [if (l.needsPlaying) 'Needs playing: pitch and slide.', need]
-                        .join(' '),
-                    style: const TextStyle(fontSize: 12, color: TakeStyle.muted)),
-                if (g != null && prevOpen && !open) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(3),
-                          child: LinearProgressIndicator(
-                            value: (best! / g.score).clamp(0.0, 1.0),
-                            minHeight: 6,
-                            backgroundColor: TakeStyle.chip,
-                            color: TakeStyle.accent,
-                            semanticsLabel:
-                                'Progress to unlock: $best of ${g.score}',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text('${_thousands(best)} / ${_thousands(g.score)}',
-                          style: TakeStyle.mono
-                              .copyWith(fontSize: 11, color: TakeStyle.body)),
-                    ],
-                  ),
-                ],
               ],
             ),
           ),
@@ -360,15 +313,245 @@ class _LearnScreenState extends State<LearnScreen> {
       ),
     );
   }
+
+  Widget _gateProgress(LevelGate gate) {
+    final best = widget.learn.scores.best(gate.gameId)?.score ?? 0;
+    return Row(
+      children: [
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: (best / gate.score).clamp(0.0, 1.0),
+              minHeight: 6,
+              backgroundColor: TakeStyle.chip,
+              color: TakeStyle.accent,
+              semanticsLabel: 'Progress to open: $best of ${gate.score}',
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text('${thousands(best)} / ${thousands(gate.score)}',
+            style: TakeStyle.mono.copyWith(fontSize: 11, color: TakeStyle.body)),
+      ],
+    );
+  }
 }
 
-/// 15000 → "15,000".
-String _thousands(int n) {
-  final s = n.toString();
-  final b = StringBuffer();
-  for (var i = 0; i < s.length; i++) {
-    if (i > 0 && (s.length - i) % 3 == 0) b.write(',');
-    b.write(s[i]);
+/// A game's levels as a row of bars: passed green, the current one blue,
+/// the rest grey.
+class LevelDots extends StatelessWidget {
+  final List<bool> open;
+  final int? current;
+  const LevelDots({super.key, required this.open, this.current});
+
+  @override
+  Widget build(BuildContext context) {
+    final n = open.length;
+    return Semantics(
+      label: current == null
+          ? 'No levels open yet'
+          : 'Level $current of $n',
+      child: ExcludeSemantics(
+        child: Row(
+          children: [
+            for (var i = 0; i < n; i++) ...[
+              if (i > 0) const SizedBox(width: 6),
+              Expanded(
+                child: Container(
+                  height: 6,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(3),
+                    color: i + 1 == current
+                        ? TakeStyle.accent
+                        : open[i]
+                            ? TakeStyle.good
+                            : TakeStyle.line,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
-  return b.toString();
+}
+
+/// One game's levels: each with its range and best score, the locked ones
+/// with what opens them. Tap an open level to play it.
+class LearnLevelsScreen extends StatefulWidget {
+  final LearnGame game;
+  final LearnContext learn;
+  final bool connected;
+  const LearnLevelsScreen(
+      {super.key, required this.game, required this.learn, this.connected = true});
+
+  @override
+  State<LearnLevelsScreen> createState() => _LearnLevelsScreenState();
+}
+
+class _LearnLevelsScreenState extends State<LearnLevelsScreen> {
+  LearnGame get g => widget.game;
+
+  Future<void> _play(FlashGameSpec l) async {
+    await playLevel(context, widget.learn, g, l);
+    if (mounted) setState(() {});
+  }
+
+  void _scores() {
+    final s = widget.learn.scores;
+    final games = [
+      for (final (i, l) in g.levels.indexed)
+        if (g.open(s)[i]) g.scoreGame(l),
+    ];
+    final first = games.isEmpty ? g.scoreGame(g.levels.first) : games.last;
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => HighScoresScreen(
+              scores: s,
+              gameId: first.id,
+              title: first.title,
+              subtitle: first.subtitle,
+              account: widget.learn.account,
+              games: games,
+            )));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.learn.scores;
+    final open = g.open(s);
+    final cur = g.current(s);
+    return Scaffold(
+      backgroundColor: TakeStyle.ground,
+      appBar: AppBar(
+        backgroundColor: TakeStyle.ground,
+        foregroundColor: TakeStyle.text,
+        title: Text(g.title,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+        actions: [
+          TextButton(onPressed: _scores, child: const Text('Scores')),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+        children: [
+          Text(g.tag, style: TakeStyle.sectionLabel),
+          const SizedBox(height: 6),
+          Text('${g.blurb} Score ${thousands(levelUpScore)} to open the next level.',
+              style: const TextStyle(fontSize: 14, height: 1.45, color: TakeStyle.body)),
+          if (!widget.connected) ...[
+            const SizedBox(height: 8),
+            const Text('Connect the slide pod to play.',
+                style: TextStyle(fontSize: 13, color: TakeStyle.warn)),
+          ],
+          const SizedBox(height: 16),
+          for (final (i, l) in g.levels.indexed)
+            _level(l, open[i], l == cur, i == 0 ? null : g.levels[i - 1]),
+        ],
+      ),
+      bottomNavigationBar: cur == null
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: FilledButton(
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                  onPressed: widget.connected ? () => _play(cur) : null,
+                  child: Text('Play Level ${cur.level} · ${cur.levelName}'),
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _level(FlashGameSpec l, bool open, bool current, FlashGameSpec? before) {
+    final best = widget.learn.scores.best(l.id);
+    final passed = open && !current;
+    final String detail;
+    if (open) {
+      detail = l.summary;
+    } else if (before == null) {
+      final gate = g.gate!;
+      detail = '${thousands(gate.score)} in ${gate.label} opens it';
+    } else {
+      detail = '${thousands(levelUpScore)} in Level ${before.level} opens it';
+    }
+    final badge = Container(
+      width: 30,
+      height: 30,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: current
+            ? TakeStyle.accent
+            : passed
+                ? Seventh.inTuneBg
+                : null,
+        border: open ? null : Border.all(color: TakeStyle.line),
+      ),
+      child: passed
+          ? const Icon(Icons.check, size: 16, color: TakeStyle.good, semanticLabel: 'Passed')
+          : Text('${l.level}',
+              style: TakeStyle.mono.copyWith(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: current ? TakeStyle.onAccent : TakeStyle.muted)),
+    );
+    final row = Row(
+      children: [
+        badge,
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(current ? 'LEVEL ${l.level} · NOW' : 'LEVEL ${l.level}',
+                  style: TakeStyle.sectionLabel.copyWith(
+                      fontSize: 11,
+                      color: current ? Seventh.accentSoft : TakeStyle.muted)),
+              Text(l.levelName,
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: open ? TakeStyle.text : TakeStyle.muted)),
+              Text(detail,
+                  style: const TextStyle(fontSize: 12, color: TakeStyle.muted)),
+            ],
+          ),
+        ),
+        if (open)
+          Text(best == null ? '–' : thousands(best.score),
+              style: TakeStyle.mono.copyWith(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: passed ? TakeStyle.good : TakeStyle.text))
+        else
+          const Icon(Icons.lock_outline, size: 18, color: TakeStyle.muted,
+              semanticLabel: 'Locked'),
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: current ? TakeStyle.chip : (open ? TakeStyle.card : Colors.transparent),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+              color: current
+                  ? TakeStyle.accent
+                  : (open ? Colors.transparent : TakeStyle.chip)),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: open && widget.connected ? () => _play(l) : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: row,
+          ),
+        ),
+      ),
+    );
+  }
 }
