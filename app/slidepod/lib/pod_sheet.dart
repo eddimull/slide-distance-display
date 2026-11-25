@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -196,10 +198,28 @@ class _PodSheetState extends State<PodSheet> {
 
   PodInfo? get _pod => widget.source.pod;
 
+  StreamSubscription<bool>? _linkSub;
+
   @override
   void initState() {
     super.initState();
     if (widget.onUpdate != null) _checkFirmware();
+    // The pod dropped (switched off, out of range): this sheet is about a
+    // pod that's gone, so close it, or (under the firmware screen) show it.
+    _linkSub = widget.source.connectionStream.listen((c) {
+      if (!mounted || c) return;
+      if (ModalRoute.of(context)?.isCurrent ?? false) {
+        Navigator.pop(context);
+      } else {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _linkSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkFirmware() async {

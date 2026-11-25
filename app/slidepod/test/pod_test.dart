@@ -352,4 +352,29 @@ void main() {
     await tester.tap(find.text('Disconnect'));
     expect(disconnected, isTrue);
   });
+
+  testWidgets('the pod sheet closes when the pod drops', (tester) async {
+    final mock = SlidePodMock();
+    addTearDown(mock.dispose);
+    await tester.runAsync(mock.connectFirst);
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => TextButton(
+          onPressed: () => showModalBottomSheet<void>(
+            context: context,
+            builder: (_) =>
+                PodSheet(source: mock, account: null, onDisconnect: () {}),
+          ),
+          child: const Text('Open'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PodSheet), findsOneWidget);
+
+    await mock.disconnect(); // switched off, out of range
+    await tester.pumpAndSettle();
+    expect(find.byType(PodSheet), findsNothing);
+  });
 }

@@ -17,6 +17,7 @@ import 'learn_screen.dart';
 import 'live_view.dart';
 import 'one_euro.dart';
 import 'pitch_detector.dart';
+import 'pod_info.dart' show PodPower;
 import 'position_colors.dart';
 import 'record_screen.dart';
 import 'seventh_api.dart';
@@ -687,6 +688,7 @@ class _HomePageState extends State<HomePage> {
     _pitchSub?.cancel();
     _pitchDetector.dispose();
     _source.dispose();
+    _pill.dispose();
     super.dispose();
   }
 
@@ -707,13 +709,37 @@ class _HomePageState extends State<HomePage> {
           ? PodLink.connecting
           : PodLink.off;
 
+  /// What the pod pill shows. Game screens and sheets are routes of their
+  /// own that build the pill from [_podPill]; they don't rebuild when this
+  /// state does (once the pod drops, no frames come to rebuild them), so
+  /// the pill listens here instead.
+  final _pill = ValueNotifier<(PodLink, String?, PodPower?, bool)>(
+      (PodLink.off, null, null, false));
+
+  void _syncPill() => _pill.value = (
+        _podLink,
+        _source.pod?.name ?? (_source.isMock ? 'Mock pod' : null),
+        _source.power,
+        _scanning,
+      );
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _syncPill();
+  }
+
   /// The pod pill: tap to connect, or (connected) the pod sheet.
-  Widget _podPill({bool compact = false}) => PodPill(
-        link: _podLink,
-        name: _source.pod?.name ?? (_source.isMock ? 'Mock pod' : null),
-        power: _source.power,
-        compact: compact,
-        onTap: _scanning ? null : _scanAndConnect,
+  Widget _podPill({bool compact = false}) =>
+      ValueListenableBuilder<(PodLink, String?, PodPower?, bool)>(
+        valueListenable: _pill,
+        builder: (_, p, _) => PodPill(
+          link: p.$1,
+          name: p.$2,
+          power: p.$3,
+          compact: compact,
+          onTap: p.$4 ? null : _scanAndConnect,
+        ),
       );
 
   Widget _profile() => ProfileAvatar(account: _acct, onTap: _openScores);
