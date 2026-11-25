@@ -183,17 +183,31 @@ void main() {
       tall(tester);
       final s = await freshScores();
       final connection = ValueNotifier(false);
+      final searching = ValueNotifier(false);
       var connects = 0;
       final learn = LearnContext(
           frames: const Stream.empty(),
           cal: SlideCalibration(),
           scores: s,
           connection: connection,
-          connect: () => connects++);
+          searching: searching,
+          connect: () {
+            connects++;
+            searching.value = true;
+          });
       await tester.pumpWidget(MaterialApp(
           home: LearnScreen(connected: false, learn: learn)));
       await tester.tap(find.text('Connect the slide pod to play'));
       expect(connects, 1);
+      // Searching: it says so, and doesn't start another search.
+      await tester.pump();
+      expect(find.text('Searching for the slide pod…'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await tester.tap(find.text('Searching for the slide pod…'));
+      expect(connects, 1);
+      searching.value = false; // nothing found
+      await tester.pump();
+      expect(find.text('Connect the slide pod to play'), findsOneWidget);
 
       // On a game's levels, the same; then the pod connects.
       await tester.tap(find.text('Position Flash'));

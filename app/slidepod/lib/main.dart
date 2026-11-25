@@ -76,7 +76,11 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late SlidePodSource _source = widget.autoMock ? SlidePodMock() : SlidePodBle();
   SlideData _data = const SlideData(rawMm: 0, filtMm: 0, position: 0);
-  bool _scanning = false;
+  /// Scanning for, or connecting to, the pod. A notifier underneath, so
+  /// screens pushed on top (the Learn levels) can show it too.
+  final _searching = ValueNotifier(false);
+  bool get _scanning => _searching.value;
+  set _scanning(bool v) => _searching.value = v;
   bool _connected = false;
 
   /// [_connected], for screens pushed on top (the Learn levels) that don't
@@ -571,7 +575,8 @@ class _HomePageState extends State<HomePage> {
                     },
                     pod: (_) => _podPill(compact: true),
                     connection: _connection,
-                    connect: _scanning ? null : _scanAndConnect),
+                    searching: _searching,
+                    connect: _scanAndConnect),
                 connected: _connected,
               ),
       );

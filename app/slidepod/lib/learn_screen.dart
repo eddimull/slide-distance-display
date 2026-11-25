@@ -31,6 +31,9 @@ class LearnContext {
   /// already connecting).
   final ValueListenable<bool>? connection;
   final VoidCallback? connect;
+
+  /// True while [connect] is scanning for or connecting to the pod.
+  final ValueListenable<bool>? searching;
   const LearnContext(
       {required this.frames,
       required this.cal,
@@ -39,28 +42,47 @@ class LearnContext {
       this.ensureMic,
       this.pod,
       this.connection,
-      this.connect});
+      this.connect,
+      this.searching});
 }
 
 /// Not connected: a button that connects the pod (the same as the pod
-/// pill), or just the note when it can't connect from here.
+/// pill), showing it's searching while it does; or just the note when it
+/// can't connect from here.
 class ConnectPrompt extends StatelessWidget {
   final VoidCallback? onConnect;
-  const ConnectPrompt({super.key, this.onConnect});
+  final ValueListenable<bool>? searching;
+  const ConnectPrompt({super.key, this.onConnect, this.searching});
 
   @override
-  Widget build(BuildContext context) => onConnect == null
-      ? const Text('Connect the slide pod to play.',
-          style: TextStyle(fontSize: 13, color: TakeStyle.warn))
-      : OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-              foregroundColor: TakeStyle.text,
-              side: const BorderSide(color: TakeStyle.accent)),
-          onPressed: onConnect,
-          icon: const Icon(Icons.bluetooth, size: 20, color: TakeStyle.accent),
-          label: const Text('Connect the slide pod to play'),
-        );
+  Widget build(BuildContext context) {
+    final connect = onConnect;
+    if (connect == null) {
+      return const Text('Connect the slide pod to play.',
+          style: TextStyle(fontSize: 13, color: TakeStyle.warn));
+    }
+    return ValueListenableBuilder<bool>(
+      valueListenable: searching ?? ValueNotifier(false),
+      builder: (context, busy, _) => OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(48),
+            foregroundColor: TakeStyle.text,
+            disabledForegroundColor: TakeStyle.body,
+            side: const BorderSide(color: TakeStyle.accent)),
+        onPressed: busy ? null : connect,
+        icon: busy
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: TakeStyle.accent))
+            : const Icon(Icons.bluetooth, size: 20, color: TakeStyle.accent),
+        label: Text(busy
+            ? 'Searching for the slide pod…'
+            : 'Connect the slide pod to play'),
+      ),
+    );
+  }
 }
 
 /// The score in a level that opens the next one.
@@ -245,7 +267,9 @@ class _LearnScreenState extends State<LearnScreen> {
           if (!widget.connected)
             Padding(
               padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
-              child: ConnectPrompt(onConnect: widget.learn.connect),
+              child: ConnectPrompt(
+                  onConnect: widget.learn.connect,
+                  searching: widget.learn.searching),
             ),
           for (final g in _games) _gameCard(g),
         ],
@@ -491,7 +515,9 @@ class _LearnLevelsScreenState extends State<LearnLevelsScreen> {
               style: const TextStyle(fontSize: 14, height: 1.45, color: TakeStyle.body)),
           if (!_connected) ...[
             const SizedBox(height: 12),
-            ConnectPrompt(onConnect: widget.learn.connect),
+            ConnectPrompt(
+                onConnect: widget.learn.connect,
+                searching: widget.learn.searching),
           ],
           const SizedBox(height: 16),
           for (final (i, l) in g.levels.indexed)
