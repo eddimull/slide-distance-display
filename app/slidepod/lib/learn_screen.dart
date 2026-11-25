@@ -88,22 +88,15 @@ class ConnectPrompt extends StatelessWidget {
 /// The score in a level that opens the next one.
 const levelUpScore = 15000;
 
-/// A game opens once the best score in [gameId] reaches [score].
-class LevelGate {
-  final String gameId, label;
-  final int score;
-  const LevelGate(this.gameId, this.label, [this.score = levelUpScore]);
-}
-
-/// A game in the Learn tab, with its own ladder of [levels]: each opens at
-/// [levelUpScore] in the one before it, the first once [gate] is met.
+/// A game in the Learn tab, with its own ladder of [levels]: Level 1 is
+/// always open, and each after it opens at [levelUpScore] in the one
+/// before.
 class LearnGame {
   final String tag, title, blurb;
 
   /// Needs the horn played (pitch), not just the slide.
   final bool needsPlaying;
   final List<FlashGameSpec> levels;
-  final LevelGate? gate;
 
   const LearnGame({
     required this.tag,
@@ -111,36 +104,28 @@ class LearnGame {
     required this.blurb,
     this.needsPlaying = false,
     required this.levels,
-    this.gate,
   });
 
   /// Which levels are open.
   List<bool> open(HighScores s) {
     int best(String id) => s.best(id)?.score ?? 0;
-    final g = gate;
     final out = <bool>[];
     for (var i = 0; i < levels.length; i++) {
-      out.add(i == 0
-          ? g == null || best(g.gameId) >= g.score
-          : out[i - 1] && best(levels[i - 1].id) >= levelUpScore);
+      out.add(i == 0 || out[i - 1] && best(levels[i - 1].id) >= levelUpScore);
     }
     return out;
   }
 
-  /// The highest open level (null: the game isn't open yet).
-  FlashGameSpec? current(HighScores s) {
-    final o = open(s);
-    final i = o.lastIndexOf(true);
-    return i < 0 ? null : levels[i];
-  }
+  /// The highest open level.
+  FlashGameSpec current(HighScores s) => levels[open(s).lastIndexOf(true)];
 
   /// What a level is called on the scores screen.
   ScoreGame scoreGame(FlashGameSpec l) => ScoreGame(
       l.id, '$title ${l.level}', '$title · Level ${l.level} · ${l.levelName}');
 }
 
-/// The Learn games, easiest first. Each has its own levels; the note games
-/// open once all seven positions are learnt.
+/// The Learn games, easiest first. Each has its own levels, and every
+/// game's Level 1 is open from the start.
 final learnGames = <LearnGame>[
   LearnGame(
     tag: 'POSITIONS',
@@ -155,7 +140,6 @@ final learnGames = <LearnGame>[
     blurb: 'A note comes up on the staff: put the slide in a position that '
         'plays it. No need to play.',
     levels: noteFlashLevels,
-    gate: LevelGate(positionFlashAll.id, 'Position Flash Level 2'),
   ),
   LearnGame(
     tag: 'PLAYING',
@@ -164,7 +148,6 @@ final learnGames = <LearnGame>[
         'In tune earns a bonus.',
     needsPlaying: true,
     levels: playTheNoteLevels,
-    gate: LevelGate(positionFlashAll.id, 'Position Flash Level 2'),
   ),
 ];
 
@@ -281,8 +264,7 @@ class _LearnScreenState extends State<LearnScreen> {
     final s = widget.learn.scores;
     final open = g.open(s);
     final cur = g.current(s);
-    final best = cur == null ? null : s.best(cur.id);
-    final gate = g.gate;
+    final best = s.best(cur.id);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -306,10 +288,7 @@ class _LearnScreenState extends State<LearnScreen> {
                         Text(g.title,
                             style: Seventh.screenTitle.copyWith(fontSize: 22)),
                         const SizedBox(height: 2),
-                        Text(
-                            cur == null
-                                ? 'Opens at ${thousands(gate!.score)} in ${gate.label}'
-                                : 'Level ${cur.level} of ${g.levels.length} · ${cur.levelName}',
+                        Text('Level ${cur.level} of ${g.levels.length} · ${cur.levelName}',
                             style: const TextStyle(fontSize: 13, color: TakeStyle.muted)),
                       ],
                     ),
@@ -325,14 +304,12 @@ class _LearnScreenState extends State<LearnScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                LevelDots(open: open, current: cur?.level),
+                LevelDots(open: open, current: cur.level),
                 const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
-                      child: cur == null
-                          ? _gateProgress(gate!)
-                          : Column(
+                      child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
@@ -352,9 +329,7 @@ class _LearnScreenState extends State<LearnScreen> {
                     const SizedBox(width: 12),
                     FilledButton(
                       style: FilledButton.styleFrom(minimumSize: const Size(96, 48)),
-                      onPressed: cur != null && widget.connected
-                          ? () => _play(g, cur)
-                          : null,
+                      onPressed: widget.connected ? () => _play(g, cur) : null,
                       child: const Text('Play'),
                     ),
                   ],
@@ -366,45 +341,20 @@ class _LearnScreenState extends State<LearnScreen> {
       ),
     );
   }
-
-  Widget _gateProgress(LevelGate gate) {
-    final best = widget.learn.scores.best(gate.gameId)?.score ?? 0;
-    return Row(
-      children: [
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(
-              value: (best / gate.score).clamp(0.0, 1.0),
-              minHeight: 6,
-              backgroundColor: TakeStyle.chip,
-              color: TakeStyle.accent,
-              semanticsLabel: 'Progress to open: $best of ${gate.score}',
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text('${thousands(best)} / ${thousands(gate.score)}',
-            style: TakeStyle.mono.copyWith(fontSize: 11, color: TakeStyle.body)),
-      ],
-    );
-  }
 }
 
 /// A game's levels as a row of bars: passed green, the current one blue,
 /// the rest grey.
 class LevelDots extends StatelessWidget {
   final List<bool> open;
-  final int? current;
-  const LevelDots({super.key, required this.open, this.current});
+  final int current;
+  const LevelDots({super.key, required this.open, required this.current});
 
   @override
   Widget build(BuildContext context) {
     final n = open.length;
     return Semantics(
-      label: current == null
-          ? 'No levels open yet'
-          : 'Level $current of $n',
+      label: 'Level $current of $n',
       child: ExcludeSemantics(
         child: Row(
           children: [
@@ -524,18 +474,16 @@ class _LearnLevelsScreenState extends State<LearnLevelsScreen> {
             _level(l, open[i], l == cur, i == 0 ? null : g.levels[i - 1]),
         ],
       ),
-      bottomNavigationBar: cur == null
-          ? null
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                child: FilledButton(
-                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-                  onPressed: _connected ? () => _play(cur) : null,
-                  child: Text('Play Level ${cur.level} · ${cur.levelName}'),
-                ),
-              ),
-            ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          child: FilledButton(
+            style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+            onPressed: _connected ? () => _play(cur) : null,
+            child: Text('Play Level ${cur.level} · ${cur.levelName}'),
+          ),
+        ),
+      ),
     );
   }
 
@@ -543,11 +491,8 @@ class _LearnLevelsScreenState extends State<LearnLevelsScreen> {
     final best = widget.learn.scores.best(l.id);
     final passed = open && !current;
     final String detail;
-    if (open) {
+    if (open || before == null) {
       detail = l.summary;
-    } else if (before == null) {
-      final gate = g.gate!;
-      detail = '${thousands(gate.score)} in ${gate.label} opens it';
     } else {
       detail = '${thousands(levelUpScore)} in Level ${before.level} opens it';
     }

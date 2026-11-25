@@ -68,17 +68,18 @@ void main() {
       final s = await freshScores();
       final pos = game('Position Flash'), notes = game('Note Flash'),
           play = game('Play the Note');
+      // Every game's Level 1 is open from the start.
       expect(pos.open(s), [true, false]);
-      expect(notes.open(s), everyElement(false));
-      expect(notes.current(s), isNull);
+      expect(notes.open(s), [true, false, false, false, false, false]);
+      expect(play.open(s), [true, false, false, false, false, false]);
+      expect(notes.current(s), noteFlash);
 
       await s.submit(positionFlash.id, entry(14999));
       expect(pos.open(s), [true, false]);
       await s.submit(positionFlash.id, entry(15000));
       expect(pos.open(s), [true, true]);
       expect(pos.current(s), positionFlashAll);
-      expect(notes.open(s), everyElement(false)); // needs all seven first
-
+      // Position Flash doesn't open anything in the other games.
       await s.submit(positionFlashAll.id, entry(15000));
       expect(notes.open(s), [true, false, false, false, false, false]);
       expect(play.open(s), [true, false, false, false, false, false]);
@@ -143,8 +144,8 @@ void main() {
       expect(find.text('Position Flash'), findsOneWidget);
       expect(find.text('Level 2 of 2 · All seven'), findsOneWidget);
       expect(find.text('10,800'), findsOneWidget);
-      expect(find.text('Opens at 15,000 in Position Flash Level 2'), findsNWidgets(2));
-      expect(find.text('10,800 / 15,000'), findsNWidgets(2));
+      expect(find.text('Level 1 of 6 · One octave'), findsNWidgets(2));
+      expect(find.widgetWithText(FilledButton, 'Play'), findsNWidgets(3));
 
       // A game's levels: passed, current, locked.
       await tester.tap(find.text('Position Flash'));
@@ -157,9 +158,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Note Flash'));
       await tester.pumpAndSettle();
-      expect(find.text('15,000 in Position Flash Level 2 opens it'), findsOneWidget);
+      expect(find.text('LEVEL 1 · NOW'), findsOneWidget);
       expect(find.text('15,000 in Level 1 opens it'), findsOneWidget);
-      expect(find.textContaining('Play Level'), findsNothing);
+      expect(find.text('Play Level 1 · One octave'), findsOneWidget);
     });
 
     testWidgets('not connected: no playing', (tester) async {
