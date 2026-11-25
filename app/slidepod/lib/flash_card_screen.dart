@@ -212,12 +212,13 @@ class MultBadge extends StatelessWidget {
 class _FlashCardScreenState extends State<FlashCardScreen>
     with SingleTickerProviderStateMixin {
   late final FlashCardRound _round =
-      FlashCardRound(rules: _r, deck: widget.spec.deck(), rng: widget.rng);
+      FlashCardRound(
+          rules: _r, deck: widget.spec.deck(), rng: widget.rng, log: debugPrint);
   double? _freq;
   late final Ticker _ticker;
   final _clock = Stopwatch()..start();
   StreamSubscription<CalFrame>? _sub;
-  double? _semis;
+  double? _semis, _mm;
   bool _seen = false; // any reading yet
   int? _rank; // place on the table after a round
   int? _bestBefore;
@@ -237,6 +238,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
     super.initState();
     _ticker = createTicker((_) => _tick());
     _sub = widget.frames.listen((f) {
+      _mm = f.mm;
       _semis = f.mm == null ? null : widget.cal.semitonesFromMm(f.mm!);
       _freq = f.freq;
       _seen = _seen || f.mm != null;
@@ -246,7 +248,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
 
   void _tick() {
     final was = _round.phase;
-    _round.update(_now, _semis, freq: _freq);
+    _round.update(_now, _semis, freq: _freq, mm: _mm);
     if (_round.phase == FlashPhase.done && was != FlashPhase.done) {
       _ticker.stop();
       _submit();

@@ -272,6 +272,43 @@ void main() {
       }
     });
   });
+  test('the log says why a card will not take', () {
+    final lines = <String>[];
+    final round = FlashCardRound(rng: math.Random(1), log: lines.add);
+    var now = 0;
+    double? semis = 0;
+    void step(int ms) {
+      for (final end = now + ms; now < end;) {
+        now += 20;
+        round.update(now, semis, mm: semis == null ? null : 100 + semis * 60);
+      }
+    }
+
+    round.start(now);
+    step(round.rules.countdownMs + 20);
+    final t = round.card!.positions.first;
+    expect(lines.any((l) => l.contains('card $t from 1')), isTrue);
+
+    // Short of the position: outside its window.
+    semis = t - 1 - 0.8;
+    step(300);
+    expect(lines.last, contains('not in $t:'));
+
+    // In it, then the sensor goes blind for longer than a gap can carry.
+    semis = t - 1.0;
+    step(100);
+    expect(lines.any((l) => l.contains('hold starts in $t')), isTrue);
+    semis = null;
+    step(400);
+    expect(lines.any((l) => l.contains('no reading: carrying the hold')), isTrue);
+    expect(lines.any((l) => l.contains('broken: no reading')), isTrue);
+
+    semis = t - 1.0;
+    step(round.rules.holdMs + 40);
+    expect(lines.any((l) => l.contains('reading back')), isTrue);
+    expect(lines.last, contains('HIT $t'));
+  });
+
 }
 
 /// A deck of one note, for pinning a card.
