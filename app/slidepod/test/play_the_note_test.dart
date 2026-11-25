@@ -135,7 +135,7 @@ void main() {
           ensureMic: () async => micOn++,
           clock: () => now),
     ));
-    expect(find.text('LEVEL 3 · PLAYING'), findsOneWidget);
+    expect(find.text('LEVEL 1 · ONE OCTAVE'), findsOneWidget);
     expect(find.textContaining('within ±25¢'), findsOneWidget);
 
     Future<void> send(double semis, double? freq) async {

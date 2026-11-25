@@ -43,13 +43,13 @@ void main() {
     });
   });
 
-  test('Note Flash v2: within ±0.6 too', () {
-    expect(noteFlash.rulesVersion, 2);
+  test('Note Flash: within ±0.6 too', () {
+    expect(noteFlash.rulesVersion, 3);
     expect(noteFlash.rules.tolerance, 0.6);
   });
 
-  test('Position Flash v2: within ±0.6 counts (7th landed at 5.45)', () {
-    expect(positionFlash.rulesVersion, 2);
+  test('Position Flash: within ±0.6 counts (7th landed at 5.45)', () {
+    expect(positionFlash.rulesVersion, 3);
     expect(positionFlash.rules.tolerance, 0.6);
     final round = FlashCardRound(rules: positionFlash.rules, deck: _Seventh());
     var now = 0;

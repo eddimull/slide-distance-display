@@ -15,11 +15,17 @@ import 'staff_note.dart';
 import 'take_style.dart';
 import 'ui/seventh.dart';
 
-/// One flash-card game: what its cards are and how it's explained.
+/// One flash-card game at one level: what its cards are and how it's
+/// explained. Each level is a game of its own on the leaderboards.
 class FlashGameSpec {
   final String id, title;
+
+  /// This level's number within its game's ladder, and its name.
   final int level;
   final String levelName, headline;
+
+  /// One line on what this level asks (for the levels list).
+  final String summary;
 
   /// The first how-to-play step: (bold, rest).
   final (String, String) firstStep;
@@ -30,11 +36,16 @@ class FlashGameSpec {
 
   /// Cards are notes on a staff (else position numbers).
   final bool notes;
+
+  /// The note's name shows with the staff; false: only once the card is
+  /// answered (or missed).
+  final bool showNames;
   final FlashDeck Function() deck;
   final FlashCardRules rules;
 
   /// The server's rules version for this game (seventh-server's
-  /// config/games.php). Bump it with any change to [rules] or scoring.
+  /// config/games.php). Bump it with any change to [rules], the deck, or
+  /// scoring.
   final int rulesVersion;
 
   const FlashGameSpec({
@@ -43,9 +54,11 @@ class FlashGameSpec {
     required this.level,
     required this.levelName,
     required this.headline,
+    this.summary = '',
     required this.firstStep,
     this.thirdStep = 'No need to play a note.',
     required this.notes,
+    this.showNames = true,
     required this.deck,
     this.rules = const FlashCardRules(),
     this.rulesVersion = 1,
@@ -56,64 +69,139 @@ class FlashGameSpec {
   String get levelLabel => 'LEVEL $level · ${levelName.toUpperCase()}';
 }
 
-PositionDeck _positions() => PositionDeck();
-NoteDeck _notes() => NoteDeck();
+// All levels count the slide within ±0.6 of a position (rules version 2 of
+// the first three games). Even calibrated, a position can read a few mm
+// off where it is, and far out (7th) a still slide read 5.52–5.80, so
+// ±0.3 kept breaking holds. Positions are 1 apart, and those that play the
+// same note 2 or more, so ±0.6 can't take a wrong one.
+const _silent = FlashCardRules(tolerance: 0.6);
 
+// Play the Note allows time to start the note; it must hold within ±25¢.
+const _played = FlashCardRules(parBaseMs: 1000, pitchGateCents: 25, tolerance: 0.6);
+
+PositionDeck _firstFour() => PositionDeck(maxPosition: 4);
+PositionDeck _allSeven() => PositionDeck();
+
+/// Position Flash Level 1: positions 1–4. Rules version 3: its deck went
+/// from seven positions to four (version 2 was all seven at ±0.6).
 const positionFlash = FlashGameSpec(
   id: 'position_flash',
   title: 'Position Flash',
   level: 1,
-  levelName: 'Getting started',
+  levelName: 'First four',
+  summary: 'Positions 1–4',
   headline: 'Get to the position, fast',
-  firstStep: ('A number comes up.', 'It\'s the position to go to.'),
+  firstStep: ('A number from 1 to 4 comes up.', 'It\'s the position to go to.'),
   notes: false,
-  deck: _positions,
-  // Version 2: the slide counts within ±0.6 of the position (±0.3 before),
-  // as in Play the Note. Even calibrated, a position can read a few mm off
-  // where you put it, and far out (7th) in-tune landed ~5.75, just inside
-  // ±0.3. Positions are 1 apart, so ±0.6 can't take a wrong one.
-  rules: FlashCardRules(tolerance: 0.6),
-  rulesVersion: 2,
+  deck: _firstFour,
+  rules: _silent,
+  rulesVersion: 3,
 );
 
-const noteFlash = FlashGameSpec(
-  id: 'note_flash',
-  title: 'Note Flash',
+/// Position Flash Level 2: all seven.
+const positionFlashAll = FlashGameSpec(
+  id: 'position_flash_all',
+  title: 'Position Flash',
   level: 2,
-  levelName: 'Reading notes',
-  headline: 'Find the note on the slide',
-  firstStep: ('A note comes up, F2 to F4.',
-      'Go to a position that plays it: any one counts.'),
-  notes: true,
-  deck: _notes,
-  // Version 2: the slide counts within ±0.6 of the position (±0.3 before),
-  // as in the other two. Logged in 7th: B2 read 5.52–5.80 with the slide
-  // still, so the hold kept starting and breaking at 5.70 and took 3.6 s.
-  // The positions that play the same note are 3 or more apart.
-  rules: FlashCardRules(tolerance: 0.6),
-  rulesVersion: 2,
+  levelName: 'All seven',
+  summary: 'Positions 1–7',
+  headline: 'All seven positions',
+  firstStep: ('A number from 1 to 7 comes up.', 'It\'s the position to go to.'),
+  notes: false,
+  deck: _allSeven,
+  rules: _silent,
 );
 
-const playTheNote = FlashGameSpec(
-  id: 'play_the_note',
-  title: 'Play the Note',
-  level: 3,
-  levelName: 'Playing',
-  headline: 'Play it, slide and all',
-  firstStep: ('A note comes up, F2 to F4.',
-      'Play it, with the slide in a position for it.'),
-  thirdStep: 'Within ±10¢ earns a bonus on top.',
-  notes: true,
-  deck: _notes,
-  // Allows time to start the note; the note must hold within ±25¢.
-  // Version 2: the slide counts within ±0.6 of the position (±0.3 before).
-  // Played in tune, a note sits where that horn plays it, which can be
-  // ~0.4 from the chart (in-tune E3 and E4 at 2.4 on a test horn, B2 at
-  // 6.6): ±0.3 turned away notes played spot on. The next position that
-  // plays the same note is 3 or more away, so this can't take a wrong one.
-  rules: FlashCardRules(parBaseMs: 1000, pitchGateCents: 25, tolerance: 0.6),
-  rulesVersion: 2,
-);
+const positionFlashLevels = [positionFlash, positionFlashAll];
+
+// The note ladders' decks. The first octave fits partials 2–4; the full
+// range, E2 (7th) to B♭4 (1st), needs 2–8.
+NoteDeck _octave() => NoteDeck(lowMidi: 46, highMidi: 58, maxPartial: 4);
+NoteDeck _wide() => NoteDeck(lowMidi: 40, highMidi: 70, maxPartial: 8);
+NoteDeck _tenor() =>
+    NoteDeck(lowMidi: 40, highMidi: 70, maxPartial: 8, clefs: const [Clef.tenor]);
+NoteDeck _alto() =>
+    NoteDeck(lowMidi: 40, highMidi: 70, maxPartial: 8, clefs: const [Clef.alto]);
+NoteDeck _allClefs() => NoteDeck(
+    lowMidi: 40,
+    highMidi: 70,
+    maxPartial: 8,
+    clefs: const [Clef.bass, Clef.tenor, Clef.alto]);
+
+/// One step of the note ladders, shared by Note Flash and Play the Note.
+typedef _Step = ({
+  String id,
+  String name,
+  String summary,
+  String range,
+  bool names,
+  FlashDeck Function() deck,
+});
+
+const List<_Step> _steps = [
+  (id: '', name: 'One octave', summary: 'B♭2–B♭3 · bass clef · named',
+      range: 'B♭2 to B♭3', names: true, deck: _octave),
+  (id: '_unnamed', name: 'No names', summary: 'The name shows once you\'re there',
+      range: 'B♭2 to B♭3, unnamed', names: false, deck: _octave),
+  (id: '_wide', name: 'Full range', summary: 'E2–B♭4 · bass clef',
+      range: 'E2 to B♭4', names: false, deck: _wide),
+  (id: '_tenor', name: 'Tenor clef', summary: 'E2–B♭4 on the tenor clef',
+      range: 'E2 to B♭4 on the tenor clef', names: false, deck: _tenor),
+  (id: '_alto', name: 'Alto clef', summary: 'E2–B♭4 on the alto clef',
+      range: 'E2 to B♭4 on the alto clef', names: false, deck: _alto),
+  (id: '_mixed', name: 'All clefs', summary: 'Bass, tenor and alto, mixed',
+      range: 'E2 to B♭4, in any clef', names: false, deck: _allClefs),
+];
+
+/// Note Flash Levels 1–6: find the note on the slide. Level 1 keeps the
+/// game's id at rules version 3 (its deck went from F2–F4 to one octave).
+final noteFlashLevels = [
+  for (final (i, st) in _steps.indexed)
+    FlashGameSpec(
+      id: 'note_flash${st.id}',
+      title: 'Note Flash',
+      level: i + 1,
+      levelName: st.name,
+      summary: st.summary,
+      headline: i == 0 ? 'Find the note on the slide' : st.name,
+      firstStep: ('A note comes up, ${st.range}.',
+          'Go to a position that plays it: any one counts.'),
+      notes: true,
+      showNames: st.names,
+      deck: st.deck,
+      rules: _silent,
+      rulesVersion: i == 0 ? 3 : 1,
+    ),
+];
+
+/// Play the Note Levels 1–6: play it, slide and all. Its own ladder, the
+/// same steps as Note Flash.
+final playTheNoteLevels = [
+  for (final (i, st) in _steps.indexed)
+    FlashGameSpec(
+      id: 'play_the_note${st.id}',
+      title: 'Play the Note',
+      level: i + 1,
+      levelName: st.name,
+      summary: st.summary,
+      headline: i == 0 ? 'Play it, slide and all' : st.name,
+      firstStep: ('A note comes up, ${st.range}.',
+          'Play it, with the slide in a position for it.'),
+      thirdStep: 'Within ±10¢ earns a bonus on top.',
+      notes: true,
+      showNames: st.names,
+      deck: st.deck,
+      rules: _played,
+      rulesVersion: i == 0 ? 3 : 1,
+    ),
+];
+
+/// Level 1 of each note game.
+final noteFlash = noteFlashLevels.first;
+final playTheNote = playTheNoteLevels.first;
+
+/// Every level of every game.
+final allGameSpecs = [...positionFlashLevels, ...noteFlashLevels, ...playTheNoteLevels];
 
 /// A flash-card game ([positionFlash], [noteFlash], [playTheNote]): a card comes up, put
 /// the slide where it says, as fast as you can, and keep a combo going.
@@ -186,6 +274,14 @@ String ordinalPos(int p) => switch (p) {
       _ => '${p}th',
     };
 
+/// The positions that answer [card]: "4th", "3rd or 6th", "1st, 4th or 6th".
+String _positions(FlashCard card) {
+  final ps = [for (final p in card.positions.toList()..sort()) ordinalPos(p)];
+  return ps.length == 1
+      ? ps.single
+      : '${ps.sublist(0, ps.length - 1).join(', ')} or ${ps.last}';
+}
+
 /// Multiplier colours, ×1 to ×4: (background, text).
 const _multColors = [
   (TakeStyle.chip, TakeStyle.body),
@@ -226,6 +322,16 @@ class _FlashCardScreenState extends State<FlashCardScreen>
   late final FlashCardRound _round =
       FlashCardRound(
           rules: _r, deck: widget.spec.deck(), rng: widget.rng, log: debugPrint);
+
+  /// Note levels: every card's staff is drawn to the level's whole range
+  /// (all its notes, in all its clefs), at a space that fits the ring, so
+  /// the card doesn't jump in size from note to note.
+  late final StaffRange? _staff = switch (_round.deck) {
+    NoteDeck d => StaffRange.of([for (final c in d.cards) c.midi!], d.clefs),
+    _ => null,
+  };
+  late final double _space =
+      _staff == null ? 13 : math.min(13, 150 / (_staff.height(1)));
   double? _freq;
   late final Ticker _ticker;
   final _clock = Stopwatch()..start();
@@ -488,7 +594,7 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                   ? const FittedBox(
                       child: Padding(
                         padding: EdgeInsets.all(3),
-                        child: BassClefNote(63, space: 6),
+                        child: StaffNote(63, space: 6),
                       ),
                     )
                   : const Text('5',
@@ -705,13 +811,23 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (widget.spec.notes) ...[
-                        BassClefNote(card.midi!, space: 13),
-                        Text(prettyNote(card.label),
-                            semanticsLabel: 'Note ${card.label}',
-                            style: const TextStyle(
-                                fontSize: 30,
-                                fontWeight: FontWeight.w500,
-                                color: TakeStyle.text)),
+                        StaffNote(card.midi!,
+                            clef: card.clef, space: _space, range: _staff),
+                        // The name: always on the named levels; on the
+                        // others once the card is answered or missed.
+                        SizedBox(
+                          height: 40,
+                          child: widget.spec.showNames || last != null
+                              ? Text(prettyNote(card.label),
+                                  semanticsLabel: 'Note ${card.label}',
+                                  style: TextStyle(
+                                      fontSize: 30,
+                                      fontWeight: FontWeight.w500,
+                                      color: last?.hit == true
+                                          ? const Color(0xFF8FD694)
+                                          : TakeStyle.text))
+                              : null,
+                        ),
                       ] else
                         Text(card.label,
                             semanticsLabel: 'Position ${card.label}',
@@ -729,7 +845,9 @@ class _FlashCardScreenState extends State<FlashCardScreen>
                                 last.hit
                                     ? '${widget.spec.notes ? '${ordinalPos(last.position!)} · ' : ''}'
                                         '${seconds(last.ms!)} · +${last.points}'
-                                    : 'Missed',
+                                    : widget.spec.notes
+                                        ? 'Missed · it\'s in ${_positions(last.card)}'
+                                        : 'Missed',
                                 style: TakeStyle.mono.copyWith(
                                     fontSize: 18,
                                     color: last.hit
