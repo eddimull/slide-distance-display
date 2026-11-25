@@ -78,6 +78,10 @@ class _HomePageState extends State<HomePage> {
   SlideData _data = const SlideData(rawMm: 0, filtMm: 0, position: 0);
   bool _scanning = false;
   bool _connected = false;
+
+  /// [_connected], for screens pushed on top (the Learn levels) that don't
+  /// rebuild with this one.
+  final _connection = ValueNotifier(false);
   late String _status = widget.autoMock ? 'Mock mode' : 'Tap to connect';
 
   // Velocity tracking
@@ -226,6 +230,7 @@ class _HomePageState extends State<HomePage> {
       if (mounted) {
         setState(() {
           _connected = c;
+          _connection.value = c;
           _ledSent = -1; // new link: the pod starts on its own colours
           _status = c
               ? (_source.isMock ? 'Mock connected' : 'Connected')
@@ -564,7 +569,9 @@ class _HomePageState extends State<HomePage> {
                     ensureMic: () async {
                       if (!_micActive && !_source.isMock) await _toggleMic();
                     },
-                    pod: (_) => _podPill(compact: true)),
+                    pod: (_) => _podPill(compact: true),
+                    connection: _connection,
+                    connect: _scanning ? null : _scanAndConnect),
                 connected: _connected,
               ),
       );
@@ -643,6 +650,7 @@ class _HomePageState extends State<HomePage> {
     _source = useMock ? SlidePodMock() : SlidePodBle();
     _data = const SlideData(rawMm: 0, filtMm: 0, position: 0);
     _connected = false;
+    _connection.value = false;
     _velocity = 0;
     _posHistory.clear();
     _livePos.reset();

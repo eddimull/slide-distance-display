@@ -177,6 +177,37 @@ void main() {
         expect(b.onPressed, isNull);
       }
     });
+
+    testWidgets('not connected: the prompt connects, and Play turns on',
+        (tester) async {
+      tall(tester);
+      final s = await freshScores();
+      final connection = ValueNotifier(false);
+      var connects = 0;
+      final learn = LearnContext(
+          frames: const Stream.empty(),
+          cal: SlideCalibration(),
+          scores: s,
+          connection: connection,
+          connect: () => connects++);
+      await tester.pumpWidget(MaterialApp(
+          home: LearnScreen(connected: false, learn: learn)));
+      await tester.tap(find.text('Connect the slide pod to play'));
+      expect(connects, 1);
+
+      // On a game's levels, the same; then the pod connects.
+      await tester.tap(find.text('Position Flash'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Connect the slide pod to play'));
+      expect(connects, 2);
+      FilledButton play() =>
+          tester.widget(find.widgetWithText(FilledButton, 'Play Level 1 · First four'));
+      expect(play().onPressed, isNull);
+      connection.value = true;
+      await tester.pump();
+      expect(find.text('Connect the slide pod to play'), findsNothing);
+      expect(play().onPressed, isNotNull);
+    });
   });
 
   testWidgets('a whole round: fast answers, ×4, a new high score',

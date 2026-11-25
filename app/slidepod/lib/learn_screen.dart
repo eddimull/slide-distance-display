@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'account.dart';
@@ -24,13 +25,42 @@ class LearnContext {
 
   /// The compact pod pill, for a round's header.
   final WidgetBuilder? pod;
+
+  /// Whether the pod is connected, as it changes (for screens pushed on
+  /// top of the tab), and how to connect it (null: can't from here, or
+  /// already connecting).
+  final ValueListenable<bool>? connection;
+  final VoidCallback? connect;
   const LearnContext(
       {required this.frames,
       required this.cal,
       required this.scores,
       this.account,
       this.ensureMic,
-      this.pod});
+      this.pod,
+      this.connection,
+      this.connect});
+}
+
+/// Not connected: a button that connects the pod (the same as the pod
+/// pill), or just the note when it can't connect from here.
+class ConnectPrompt extends StatelessWidget {
+  final VoidCallback? onConnect;
+  const ConnectPrompt({super.key, this.onConnect});
+
+  @override
+  Widget build(BuildContext context) => onConnect == null
+      ? const Text('Connect the slide pod to play.',
+          style: TextStyle(fontSize: 13, color: TakeStyle.warn))
+      : OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+              foregroundColor: TakeStyle.text,
+              side: const BorderSide(color: TakeStyle.accent)),
+          onPressed: onConnect,
+          icon: const Icon(Icons.bluetooth, size: 20, color: TakeStyle.accent),
+          label: const Text('Connect the slide pod to play'),
+        );
 }
 
 /// The score in a level that opens the next one.
@@ -213,10 +243,9 @@ class _LearnScreenState extends State<LearnScreen> {
                 style: const TextStyle(fontSize: 14, height: 1.45, color: TakeStyle.body)),
           ),
           if (!widget.connected)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(4, 0, 4, 12),
-              child: Text('Connect the slide pod to play.',
-                  style: TextStyle(fontSize: 13, color: TakeStyle.warn)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+              child: ConnectPrompt(onConnect: widget.learn.connect),
             ),
           for (final g in _games) _gameCard(g),
         ],
@@ -394,6 +423,25 @@ class LearnLevelsScreen extends StatefulWidget {
 class _LearnLevelsScreenState extends State<LearnLevelsScreen> {
   LearnGame get g => widget.game;
 
+  /// Connected now: from the app as it changes, else as it was on opening.
+  bool get _connected => widget.learn.connection?.value ?? widget.connected;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.learn.connection?.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    widget.learn.connection?.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _play(FlashGameSpec l) async {
     await playLevel(context, widget.learn, g, l);
     if (mounted) setState(() {});
@@ -441,10 +489,9 @@ class _LearnLevelsScreenState extends State<LearnLevelsScreen> {
           const SizedBox(height: 6),
           Text('${g.blurb} Score ${thousands(levelUpScore)} to open the next level.',
               style: const TextStyle(fontSize: 14, height: 1.45, color: TakeStyle.body)),
-          if (!widget.connected) ...[
-            const SizedBox(height: 8),
-            const Text('Connect the slide pod to play.',
-                style: TextStyle(fontSize: 13, color: TakeStyle.warn)),
+          if (!_connected) ...[
+            const SizedBox(height: 12),
+            ConnectPrompt(onConnect: widget.learn.connect),
           ],
           const SizedBox(height: 16),
           for (final (i, l) in g.levels.indexed)
@@ -458,7 +505,7 @@ class _LearnLevelsScreenState extends State<LearnLevelsScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
                 child: FilledButton(
                   style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-                  onPressed: widget.connected ? () => _play(cur) : null,
+                  onPressed: _connected ? () => _play(cur) : null,
                   child: Text('Play Level ${cur.level} · ${cur.levelName}'),
                 ),
               ),
@@ -545,7 +592,7 @@ class _LearnLevelsScreenState extends State<LearnLevelsScreen> {
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: open && widget.connected ? () => _play(l) : null,
+          onTap: open && _connected ? () => _play(l) : null,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: row,
