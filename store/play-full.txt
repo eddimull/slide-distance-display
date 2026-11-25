@@ -1,0 +1,35 @@
+Seventh shows you where your trombone slide is and how in tune you are, while you play. It works with SlidePod, a small sensor on your slide that connects to your phone over Bluetooth, and listens through your phone's microphone.
+
+See your slide, hear your pitch
+• Live view: your slide position from 1st to 7th, updated as you move, with the note you're playing and how many cents sharp or flat it is.
+• Pitch against the slide: Seventh knows which notes each position gives, so it can tell a note that's out of tune because of the slide from one you've lipped.
+• A simple view for playing, and a detailed one with a slide trace, speed and tuning meter.
+
+Record a take, then see what happened
+• Record yourself with the slide and the sound together.
+• Review the take on one timeline: where the slide went, how fast it moved, and how far each note was from in tune. Pinch to zoom in on a passage.
+• Every slide move is marked: clean shifts, overshoots, and positions you stopped short of.
+• Tap a note for the close-up: what went wrong in plain words, how the slide arrived, and the same note in your earlier takes of the piece.
+• Play it back slower without changing the pitch, loop a note or passage, and play a reference tone to hear what in tune sounds like.
+• Share a take: its audio, the note-by-note analysis as a spreadsheet, and the take itself.
+
+Learn the slide with games
+• Position Flash: a position comes up; get there fast.
+• Note Flash: a note comes up on the bass clef staff, F2 to F4; find a position that plays it.
+• Play the Note: play it for real, slide and all, in tune to score, with a bonus for nailing it within 10 cents.
+• Combos and multipliers, personal bests, and optional leaderboards.
+
+Made for your horn
+• A short guided calibration (three slow glissandos out to 7th) teaches Seventh where your positions sit on your instrument.
+• Seventh keeps learning the upper partials' tuning from your normal playing.
+• Add your instruments, each with its own calibration, and keep them on your account so they follow you to a new phone.
+
+Your SlidePod
+• See its battery, including while it charges, and its connection at a glance on every screen.
+• Give it a name, so you can tell it apart from others nearby, and link it to your account.
+• Firmware updates install from the app over Bluetooth.
+
+Private by design
+No ads, no tracking, no analytics. Your recordings stay on your device unless you share them. An account is only needed for leaderboards and for keeping your instruments in the cloud; sign in with Apple or Google, and delete your account from the app at any time.
+
+Seventh needs a SlidePod sensor for slide position. Without one, it still hears your pitch and tuning.
