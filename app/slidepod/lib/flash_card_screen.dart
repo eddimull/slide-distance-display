@@ -118,15 +118,26 @@ const positionFlashLevels = [positionFlash, positionFlashAll];
 // range, E2 (7th) to B♭4 (1st), needs 2–8.
 NoteDeck _octave() => NoteDeck(lowMidi: 46, highMidi: 58, maxPartial: 4);
 NoteDeck _wide() => NoteDeck(lowMidi: 40, highMidi: 70, maxPartial: 8);
-NoteDeck _tenor() =>
-    NoteDeck(lowMidi: 40, highMidi: 70, maxPartial: 8, clefs: const [Clef.tenor]);
-NoteDeck _alto() =>
-    NoteDeck(lowMidi: 40, highMidi: 70, maxPartial: 8, clefs: const [Clef.alto]);
+// The clef levels keep to each clef's staff, as parts written in it do:
+// from the bottom line up to the second ledger line above. Bass, mixed in
+// with them, keeps its full range.
+const _bassRange = (40, 70); // E2–B♭4
+const _tenorRange = (50, 70); // D3–B♭4
+const _altoRange = (53, 73); // F3–D♭5: C5 and D♭5 need partials 9 and 10
+NoteDeck _tenor() => NoteDeck(
+    lowMidi: 50, highMidi: 70, maxPartial: 8, clefs: const [Clef.tenor]);
+NoteDeck _alto() => NoteDeck(
+    lowMidi: 53, highMidi: 73, maxPartial: 10, clefs: const [Clef.alto]);
 NoteDeck _allClefs() => NoteDeck(
     lowMidi: 40,
-    highMidi: 70,
-    maxPartial: 8,
-    clefs: const [Clef.bass, Clef.tenor, Clef.alto]);
+    highMidi: 73,
+    maxPartial: 10,
+    clefs: const [Clef.bass, Clef.tenor, Clef.alto],
+    clefRanges: const {
+      Clef.bass: _bassRange,
+      Clef.tenor: _tenorRange,
+      Clef.alto: _altoRange,
+    });
 
 /// One step of the note ladders, shared by Note Flash and Play the Note.
 typedef _Step = ({
@@ -136,21 +147,25 @@ typedef _Step = ({
   String range,
   bool names,
   FlashDeck Function() deck,
+
+  /// Rules version (the server's config/games.php): the clef levels went to
+  /// 2 when their ranges moved to each clef's staff.
+  int version,
 });
 
 const List<_Step> _steps = [
   (id: '', name: 'One octave', summary: 'B♭2–B♭3 · bass clef · named',
-      range: 'B♭2 to B♭3', names: true, deck: _octave),
+      range: 'B♭2 to B♭3', names: true, deck: _octave, version: 3),
   (id: '_unnamed', name: 'No names', summary: 'The name shows once you\'re there',
-      range: 'B♭2 to B♭3, unnamed', names: false, deck: _octave),
+      range: 'B♭2 to B♭3, unnamed', names: false, deck: _octave, version: 1),
   (id: '_wide', name: 'Full range', summary: 'E2–B♭4 · bass clef',
-      range: 'E2 to B♭4', names: false, deck: _wide),
-  (id: '_tenor', name: 'Tenor clef', summary: 'E2–B♭4 on the tenor clef',
-      range: 'E2 to B♭4 on the tenor clef', names: false, deck: _tenor),
-  (id: '_alto', name: 'Alto clef', summary: 'E2–B♭4 on the alto clef',
-      range: 'E2 to B♭4 on the alto clef', names: false, deck: _alto),
+      range: 'E2 to B♭4', names: false, deck: _wide, version: 1),
+  (id: '_tenor', name: 'Tenor clef', summary: 'D3–B♭4 on the tenor clef',
+      range: 'D3 to B♭4 on the tenor clef', names: false, deck: _tenor, version: 2),
+  (id: '_alto', name: 'Alto clef', summary: 'F3–D♭5 on the alto clef',
+      range: 'F3 to D♭5 on the alto clef', names: false, deck: _alto, version: 2),
   (id: '_mixed', name: 'All clefs', summary: 'Bass, tenor and alto, mixed',
-      range: 'E2 to B♭4, in any clef', names: false, deck: _allClefs),
+      range: 'E2 to D♭5, each on its own clef\'s staff', names: false, deck: _allClefs, version: 2),
 ];
 
 /// Note Flash Levels 1–6: find the note on the slide. Level 1 keeps the
@@ -170,7 +185,7 @@ final noteFlashLevels = [
       showNames: st.names,
       deck: st.deck,
       rules: _silent,
-      rulesVersion: i == 0 ? 3 : 1,
+      rulesVersion: st.version,
     ),
 ];
 
@@ -192,7 +207,7 @@ final playTheNoteLevels = [
       showNames: st.names,
       deck: st.deck,
       rules: _played,
-      rulesVersion: i == 0 ? 3 : 1,
+      rulesVersion: st.version,
     ),
 ];
 
@@ -324,10 +339,12 @@ class _FlashCardScreenState extends State<FlashCardScreen>
           rules: _r, deck: widget.spec.deck(), rng: widget.rng, log: debugPrint);
 
   /// Note levels: every card's staff is drawn to the level's whole range
-  /// (all its notes, in all its clefs), at a space that fits the ring, so
+  /// (each clef's notes in that clef), at a space that fits the ring, so
   /// the card doesn't jump in size from note to note.
   late final StaffRange? _staff = switch (_round.deck) {
-    NoteDeck d => StaffRange.of([for (final c in d.cards) c.midi!], d.clefs),
+    NoteDeck d => StaffRange.union([
+        for (final c in d.clefs) StaffRange.of(d.midisIn(c), [c]),
+      ]),
     _ => null,
   };
   late final double _space =

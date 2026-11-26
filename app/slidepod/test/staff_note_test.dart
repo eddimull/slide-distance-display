@@ -55,10 +55,10 @@ void main() {
     expect(StaffRange.of([60], [Clef.tenor]).top, greaterThan(9.5));
   });
 
-  testWidgets('draws every note E2–B♭4 in every clef', (tester) async {
-    final range = StaffRange.of([for (var m = 40; m <= 70; m++) m], Clef.values);
+  testWidgets('draws every note E2–D♭5 in every clef', (tester) async {
+    final range = StaffRange.of([for (var m = 40; m <= 73; m++) m], Clef.values);
     for (final c in Clef.values) {
-      for (var m = 40; m <= 70; m++) {
+      for (var m = 40; m <= 73; m++) {
         await tester.pumpWidget(MaterialApp(
             home: Center(child: StaffNote(m, clef: c, space: 10, range: range))));
         expect(tester.takeException(), isNull);

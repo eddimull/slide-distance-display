@@ -1782,18 +1782,18 @@
     {
       "name": "note_flash_tenor seed 1",
       "game": "note_flash_tenor",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
-          "card": "n62",
+          "card": "n50",
           "from": 3,
-          "position": 1,
+          "position": 4,
           "ms": 520,
           "cents": null
         },
         {
-          "card": "n66",
-          "from": 1,
+          "card": "n58",
+          "from": 4,
           "position": 5,
           "ms": 500,
           "cents": null
@@ -1806,106 +1806,106 @@
           "cents": null
         },
         {
-          "card": "n40",
+          "card": "n66",
           "from": 2,
-          "position": 7,
+          "position": 3,
           "ms": 320,
           "cents": null
         },
         {
-          "card": "n46",
-          "from": 7,
-          "position": 1,
+          "card": "n61",
+          "from": 3,
+          "position": 5,
           "ms": 480,
           "cents": null
         },
         {
-          "card": "n51",
-          "from": 1,
-          "position": 3,
+          "card": "n52",
+          "from": 5,
+          "position": 7,
           "ms": 1480,
           "cents": null
         },
         {
-          "card": "n42",
-          "from": 3,
-          "position": 5,
+          "card": "n65",
+          "from": 7,
+          "position": 4,
           "ms": 1060,
           "cents": null
         },
         {
-          "card": "n55",
-          "from": 5,
-          "position": 4,
+          "card": "n54",
+          "from": 4,
+          "position": 5,
           "ms": 600,
           "cents": null
         },
         {
           "card": "n51",
-          "from": 4,
+          "from": 5,
           "position": 3,
           "ms": 640,
           "cents": null
         },
         {
-          "card": "n42",
+          "card": "n65",
           "from": 3,
-          "position": 5,
+          "position": 6,
           "ms": 2140,
           "cents": null
         },
         {
-          "card": "n68",
-          "from": 5,
-          "position": 3,
+          "card": "n56",
+          "from": 6,
+          "position": 7,
           "ms": 360,
           "cents": null
         },
         {
-          "card": "n46",
-          "from": 3,
+          "card": "n57",
+          "from": 7,
           "position": null,
           "ms": null,
           "cents": null
         },
         {
-          "card": "n70",
-          "from": 3,
-          "position": 1,
+          "card": "n67",
+          "from": 7,
+          "position": 4,
           "ms": 460,
           "cents": null
         },
         {
-          "card": "n48",
-          "from": 1,
-          "position": 6,
+          "card": "n52",
+          "from": 4,
+          "position": 7,
           "ms": 980,
           "cents": null
         },
         {
           "card": "n58",
-          "from": 6,
+          "from": 7,
           "position": 5,
           "ms": 540,
           "cents": null
         },
         {
-          "card": "n63",
+          "card": "n52",
           "from": 5,
-          "position": 3,
+          "position": 2,
           "ms": 320,
           "cents": null
         },
         {
-          "card": "n49",
-          "from": 3,
-          "position": 5,
+          "card": "n60",
+          "from": 2,
+          "position": 3,
           "ms": 420,
           "cents": null
         }
       ],
       "expected": {
-        "score": 26236,
+        "score": 22945,
         "found": 16,
         "answered": 17,
         "best_combo": 5,
@@ -1915,7 +1915,7 @@
     {
       "name": "note_flash_tenor seed 2",
       "game": "note_flash_tenor",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "n60",
@@ -1925,85 +1925,85 @@
           "cents": null
         },
         {
-          "card": "n43",
+          "card": "n58",
           "from": 3,
-          "position": 4,
+          "position": 5,
           "ms": 640,
           "cents": null
         },
         {
-          "card": "n66",
-          "from": 4,
-          "position": 3,
+          "card": "n67",
+          "from": 5,
+          "position": 2,
           "ms": 500,
           "cents": null
         },
         {
-          "card": "n47",
-          "from": 3,
-          "position": 7,
+          "card": "n58",
+          "from": 2,
+          "position": 1,
           "ms": 1160,
           "cents": null
         },
         {
-          "card": "n45",
-          "from": 7,
-          "position": 2,
+          "card": "n59",
+          "from": 1,
+          "position": 7,
           "ms": 460,
           "cents": null
         },
         {
-          "card": "n68",
-          "from": 2,
-          "position": 3,
+          "card": "n69",
+          "from": 7,
+          "position": 2,
           "ms": 2120,
           "cents": null
         },
         {
-          "card": "n70",
-          "from": 3,
-          "position": 1,
+          "card": "n53",
+          "from": 2,
+          "position": 6,
           "ms": 2140,
           "cents": null
         },
         {
-          "card": "n54",
-          "from": 1,
-          "position": 5,
+          "card": "n67",
+          "from": 6,
+          "position": 2,
           "ms": 1840,
           "cents": null
         },
         {
-          "card": "n51",
-          "from": 5,
-          "position": 3,
+          "card": "n50",
+          "from": 2,
+          "position": 4,
           "ms": 320,
           "cents": null
         },
         {
-          "card": "n61",
-          "from": 3,
-          "position": 5,
+          "card": "n53",
+          "from": 4,
+          "position": 6,
           "ms": 520,
           "cents": null
         },
         {
-          "card": "n70",
-          "from": 5,
-          "position": 1,
+          "card": "n59",
+          "from": 6,
+          "position": 7,
           "ms": 380,
           "cents": null
         },
         {
-          "card": "n47",
-          "from": 1,
-          "position": 7,
+          "card": "n58",
+          "from": 7,
+          "position": 5,
           "ms": 280,
           "cents": null
         },
         {
           "card": "n68",
-          "from": 7,
+          "from": 5,
           "position": 3,
           "ms": 1820,
           "cents": null
@@ -2023,22 +2023,22 @@
           "cents": null
         },
         {
-          "card": "n40",
+          "card": "n60",
           "from": 5,
-          "position": 7,
+          "position": 3,
           "ms": 1020,
           "cents": null
         },
         {
-          "card": "n54",
-          "from": 7,
-          "position": 5,
+          "card": "n57",
+          "from": 3,
+          "position": 6,
           "ms": 420,
           "cents": null
         }
       ],
       "expected": {
-        "score": 19181,
+        "score": 18950,
         "found": 17,
         "answered": 17,
         "best_combo": 4,
@@ -2048,130 +2048,130 @@
     {
       "name": "note_flash_alto seed 1",
       "game": "note_flash_alto",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
-          "card": "n62",
+          "card": "n53",
           "from": 3,
-          "position": 1,
-          "ms": 520,
-          "cents": null
-        },
-        {
-          "card": "n66",
-          "from": 1,
-          "position": 5,
-          "ms": 500,
-          "cents": null
-        },
-        {
-          "card": "n52",
-          "from": 5,
-          "position": 2,
-          "ms": 300,
-          "cents": null
-        },
-        {
-          "card": "n40",
-          "from": 2,
-          "position": 7,
-          "ms": 320,
-          "cents": null
-        },
-        {
-          "card": "n46",
-          "from": 7,
-          "position": 1,
-          "ms": 480,
-          "cents": null
-        },
-        {
-          "card": "n51",
-          "from": 1,
-          "position": 3,
-          "ms": 1480,
-          "cents": null
-        },
-        {
-          "card": "n42",
-          "from": 3,
-          "position": 5,
-          "ms": 1060,
-          "cents": null
-        },
-        {
-          "card": "n55",
-          "from": 5,
-          "position": 4,
-          "ms": 600,
-          "cents": null
-        },
-        {
-          "card": "n51",
-          "from": 4,
-          "position": 3,
-          "ms": 640,
-          "cents": null
-        },
-        {
-          "card": "n42",
-          "from": 3,
-          "position": 5,
-          "ms": 2140,
-          "cents": null
-        },
-        {
-          "card": "n68",
-          "from": 5,
-          "position": 3,
-          "ms": 360,
-          "cents": null
-        },
-        {
-          "card": "n46",
-          "from": 3,
-          "position": null,
-          "ms": null,
-          "cents": null
-        },
-        {
-          "card": "n70",
-          "from": 3,
-          "position": 1,
-          "ms": 460,
-          "cents": null
-        },
-        {
-          "card": "n48",
-          "from": 1,
           "position": 6,
-          "ms": 980,
+          "ms": 520,
           "cents": null
         },
         {
           "card": "n58",
           "from": 6,
           "position": 5,
-          "ms": 540,
+          "ms": 500,
+          "cents": null
+        },
+        {
+          "card": "n53",
+          "from": 5,
+          "position": 1,
+          "ms": 300,
+          "cents": null
+        },
+        {
+          "card": "n71",
+          "from": 1,
+          "position": 2,
+          "ms": 320,
+          "cents": null
+        },
+        {
+          "card": "n54",
+          "from": 2,
+          "position": 5,
+          "ms": 480,
+          "cents": null
+        },
+        {
+          "card": "n59",
+          "from": 5,
+          "position": 7,
+          "ms": 1480,
+          "cents": null
+        },
+        {
+          "card": "n73",
+          "from": 7,
+          "position": 2,
+          "ms": 1060,
           "cents": null
         },
         {
           "card": "n63",
-          "from": 5,
+          "from": 2,
+          "position": 3,
+          "ms": 600,
+          "cents": null
+        },
+        {
+          "card": "n69",
+          "from": 3,
+          "position": 6,
+          "ms": 640,
+          "cents": null
+        },
+        {
+          "card": "n62",
+          "from": 6,
+          "position": 7,
+          "ms": 2140,
+          "cents": null
+        },
+        {
+          "card": "n71",
+          "from": 7,
+          "position": 4,
+          "ms": 360,
+          "cents": null
+        },
+        {
+          "card": "n73",
+          "from": 4,
+          "position": null,
+          "ms": null,
+          "cents": null
+        },
+        {
+          "card": "n64",
+          "from": 4,
+          "position": 2,
+          "ms": 460,
+          "cents": null
+        },
+        {
+          "card": "n72",
+          "from": 2,
+          "position": 3,
+          "ms": 980,
+          "cents": null
+        },
+        {
+          "card": "n55",
+          "from": 3,
+          "position": 4,
+          "ms": 540,
+          "cents": null
+        },
+        {
+          "card": "n56",
+          "from": 4,
           "position": 3,
           "ms": 320,
           "cents": null
         },
         {
-          "card": "n49",
+          "card": "n58",
           "from": 3,
-          "position": 5,
+          "position": 1,
           "ms": 420,
           "cents": null
         }
       ],
       "expected": {
-        "score": 26236,
+        "score": 23309,
         "found": 16,
         "answered": 17,
         "best_combo": 5,
@@ -2181,95 +2181,361 @@
     {
       "name": "note_flash_alto seed 2",
       "game": "note_flash_alto",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
-          "card": "n60",
+          "card": "n71",
           "from": 7,
-          "position": 3,
+          "position": 2,
           "ms": 1340,
           "cents": null
         },
         {
-          "card": "n43",
+          "card": "n62",
+          "from": 2,
+          "position": 7,
+          "ms": 640,
+          "cents": null
+        },
+        {
+          "card": "n65",
+          "from": 7,
+          "position": 1,
+          "ms": 500,
+          "cents": null
+        },
+        {
+          "card": "n71",
+          "from": 1,
+          "position": 2,
+          "ms": 1160,
+          "cents": null
+        },
+        {
+          "card": "n63",
+          "from": 2,
+          "position": 6,
+          "ms": 460,
+          "cents": null
+        },
+        {
+          "card": "n54",
+          "from": 6,
+          "position": 5,
+          "ms": 2120,
+          "cents": null
+        },
+        {
+          "card": "n57",
+          "from": 5,
+          "position": 6,
+          "ms": 2140,
+          "cents": null
+        },
+        {
+          "card": "n66",
+          "from": 6,
+          "position": 3,
+          "ms": 1840,
+          "cents": null
+        },
+        {
+          "card": "n69",
           "from": 3,
           "position": 4,
-          "ms": 640,
+          "ms": 320,
           "cents": null
         },
         {
           "card": "n66",
           "from": 4,
           "position": 3,
+          "ms": 520,
+          "cents": null
+        },
+        {
+          "card": "n59",
+          "from": 3,
+          "position": 7,
+          "ms": 380,
+          "cents": null
+        },
+        {
+          "card": "n71",
+          "from": 7,
+          "position": 4,
+          "ms": 280,
+          "cents": null
+        },
+        {
+          "card": "n70",
+          "from": 4,
+          "position": 1,
+          "ms": 1820,
+          "cents": null
+        },
+        {
+          "card": "n66",
+          "from": 1,
+          "position": 7,
+          "ms": 1300,
+          "cents": null
+        },
+        {
+          "card": "n58",
+          "from": 7,
+          "position": 5,
+          "ms": 620,
+          "cents": null
+        },
+        {
+          "card": "n69",
+          "from": 5,
+          "position": 2,
+          "ms": 1020,
+          "cents": null
+        },
+        {
+          "card": "n72",
+          "from": 2,
+          "position": 3,
+          "ms": 420,
+          "cents": null
+        }
+      ],
+      "expected": {
+        "score": 18513,
+        "found": 17,
+        "answered": 17,
+        "best_combo": 4,
+        "in_tune": null
+      }
+    },
+    {
+      "name": "note_flash_mixed seed 1",
+      "game": "note_flash_mixed",
+      "rules_version": 2,
+      "cards": [
+        {
+          "card": "n43",
+          "from": 3,
+          "position": 4,
+          "ms": 520,
+          "cents": null
+        },
+        {
+          "card": "n68",
+          "from": 4,
+          "position": 3,
           "ms": 500,
           "cents": null
         },
         {
-          "card": "n47",
+          "card": "n58",
           "from": 3,
+          "position": 1,
+          "ms": 300,
+          "cents": null
+        },
+        {
+          "card": "n64",
+          "from": 1,
+          "position": 5,
+          "ms": 320,
+          "cents": null
+        },
+        {
+          "card": "n63",
+          "from": 5,
+          "position": 6,
+          "ms": 480,
+          "cents": null
+        },
+        {
+          "card": "n70",
+          "from": 6,
+          "position": 1,
+          "ms": 1480,
+          "cents": null
+        },
+        {
+          "card": "n73",
+          "from": 1,
+          "position": 2,
+          "ms": 1060,
+          "cents": null
+        },
+        {
+          "card": "n55",
+          "from": 2,
+          "position": 4,
+          "ms": 600,
+          "cents": null
+        },
+        {
+          "card": "n66",
+          "from": 4,
+          "position": 7,
+          "ms": 640,
+          "cents": null
+        },
+        {
+          "card": "n69",
+          "from": 7,
+          "position": 6,
+          "ms": 2140,
+          "cents": null
+        },
+        {
+          "card": "n64",
+          "from": 6,
+          "position": 2,
+          "ms": 360,
+          "cents": null
+        },
+        {
+          "card": "n41",
+          "from": 2,
+          "position": null,
+          "ms": null,
+          "cents": null
+        },
+        {
+          "card": "n48",
+          "from": 2,
+          "position": 6,
+          "ms": 460,
+          "cents": null
+        },
+        {
+          "card": "n61",
+          "from": 6,
+          "position": 5,
+          "ms": 980,
+          "cents": null
+        },
+        {
+          "card": "n59",
+          "from": 5,
+          "position": 7,
+          "ms": 540,
+          "cents": null
+        },
+        {
+          "card": "n57",
+          "from": 7,
+          "position": 2,
+          "ms": 320,
+          "cents": null
+        },
+        {
+          "card": "n53",
+          "from": 2,
+          "position": 1,
+          "ms": 420,
+          "cents": null
+        }
+      ],
+      "expected": {
+        "score": 22532,
+        "found": 16,
+        "answered": 17,
+        "best_combo": 5,
+        "in_tune": null
+      }
+    },
+    {
+      "name": "note_flash_mixed seed 2",
+      "game": "note_flash_mixed",
+      "rules_version": 2,
+      "cards": [
+        {
+          "card": "n54",
+          "from": 7,
+          "position": 5,
+          "ms": 1340,
+          "cents": null
+        },
+        {
+          "card": "n72",
+          "from": 5,
+          "position": 3,
+          "ms": 640,
+          "cents": null
+        },
+        {
+          "card": "n50",
+          "from": 3,
+          "position": 4,
+          "ms": 500,
+          "cents": null
+        },
+        {
+          "card": "n64",
+          "from": 4,
           "position": 7,
           "ms": 1160,
           "cents": null
         },
         {
-          "card": "n45",
+          "card": "n51",
           "from": 7,
-          "position": 2,
+          "position": 3,
           "ms": 460,
           "cents": null
         },
         {
-          "card": "n68",
-          "from": 2,
-          "position": 3,
+          "card": "n71",
+          "from": 3,
+          "position": 4,
           "ms": 2120,
           "cents": null
         },
         {
-          "card": "n70",
-          "from": 3,
-          "position": 1,
+          "card": "n47",
+          "from": 4,
+          "position": 7,
           "ms": 2140,
+          "cents": null
+        },
+        {
+          "card": "n65",
+          "from": 7,
+          "position": 1,
+          "ms": 1840,
           "cents": null
         },
         {
           "card": "n54",
           "from": 1,
           "position": 5,
-          "ms": 1840,
-          "cents": null
-        },
-        {
-          "card": "n51",
-          "from": 5,
-          "position": 3,
           "ms": 320,
           "cents": null
         },
         {
-          "card": "n61",
-          "from": 3,
-          "position": 5,
+          "card": "n40",
+          "from": 5,
+          "position": 7,
           "ms": 520,
           "cents": null
         },
         {
-          "card": "n70",
-          "from": 5,
+          "card": "n65",
+          "from": 7,
           "position": 1,
           "ms": 380,
           "cents": null
         },
         {
-          "card": "n47",
+          "card": "n57",
           "from": 1,
-          "position": 7,
+          "position": 6,
           "ms": 280,
           "cents": null
         },
         {
           "card": "n68",
-          "from": 7,
+          "from": 6,
           "position": 3,
           "ms": 1820,
           "cents": null
@@ -2282,295 +2548,29 @@
           "cents": null
         },
         {
-          "card": "n66",
+          "card": "n57",
           "from": 7,
-          "position": 5,
+          "position": 6,
           "ms": 620,
           "cents": null
         },
         {
-          "card": "n40",
-          "from": 5,
-          "position": 7,
-          "ms": 1020,
-          "cents": null
-        },
-        {
-          "card": "n54",
-          "from": 7,
-          "position": 5,
-          "ms": 420,
-          "cents": null
-        }
-      ],
-      "expected": {
-        "score": 19181,
-        "found": 17,
-        "answered": 17,
-        "best_combo": 4,
-        "in_tune": null
-      }
-    },
-    {
-      "name": "note_flash_mixed seed 1",
-      "game": "note_flash_mixed",
-      "rules_version": 1,
-      "cards": [
-        {
-          "card": "n62",
-          "from": 3,
-          "position": 1,
-          "ms": 520,
-          "cents": null
-        },
-        {
-          "card": "n51",
-          "from": 1,
-          "position": 3,
-          "ms": 500,
-          "cents": null
-        },
-        {
-          "card": "n46",
-          "from": 3,
-          "position": 1,
-          "ms": 300,
-          "cents": null
-        },
-        {
-          "card": "n42",
-          "from": 1,
-          "position": 5,
-          "ms": 320,
-          "cents": null
-        },
-        {
-          "card": "n51",
-          "from": 5,
-          "position": 3,
-          "ms": 480,
-          "cents": null
-        },
-        {
-          "card": "n67",
-          "from": 3,
+          "card": "n55",
+          "from": 6,
           "position": 4,
-          "ms": 1480,
+          "ms": 1020,
           "cents": null
         },
         {
           "card": "n61",
           "from": 4,
-          "position": 2,
-          "ms": 1060,
-          "cents": null
-        },
-        {
-          "card": "n56",
-          "from": 2,
-          "position": 3,
-          "ms": 600,
-          "cents": null
-        },
-        {
-          "card": "n49",
-          "from": 3,
           "position": 5,
-          "ms": 640,
-          "cents": null
-        },
-        {
-          "card": "n51",
-          "from": 5,
-          "position": 3,
-          "ms": 2140,
-          "cents": null
-        },
-        {
-          "card": "n62",
-          "from": 3,
-          "position": 1,
-          "ms": 360,
-          "cents": null
-        },
-        {
-          "card": "n43",
-          "from": 1,
-          "position": null,
-          "ms": null,
-          "cents": null
-        },
-        {
-          "card": "n59",
-          "from": 1,
-          "position": 7,
-          "ms": 460,
-          "cents": null
-        },
-        {
-          "card": "n67",
-          "from": 7,
-          "position": 4,
-          "ms": 980,
-          "cents": null
-        },
-        {
-          "card": "n45",
-          "from": 4,
-          "position": 2,
-          "ms": 540,
-          "cents": null
-        },
-        {
-          "card": "n43",
-          "from": 2,
-          "position": 4,
-          "ms": 320,
-          "cents": null
-        },
-        {
-          "card": "n46",
-          "from": 4,
-          "position": 1,
           "ms": 420,
           "cents": null
         }
       ],
       "expected": {
-        "score": 23142,
-        "found": 16,
-        "answered": 17,
-        "best_combo": 5,
-        "in_tune": null
-      }
-    },
-    {
-      "name": "note_flash_mixed seed 2",
-      "game": "note_flash_mixed",
-      "rules_version": 1,
-      "cards": [
-        {
-          "card": "n60",
-          "from": 7,
-          "position": 3,
-          "ms": 1340,
-          "cents": null
-        },
-        {
-          "card": "n65",
-          "from": 3,
-          "position": 6,
-          "ms": 640,
-          "cents": null
-        },
-        {
-          "card": "n45",
-          "from": 6,
-          "position": 2,
-          "ms": 500,
-          "cents": null
-        },
-        {
-          "card": "n70",
-          "from": 2,
-          "position": 1,
-          "ms": 1160,
-          "cents": null
-        },
-        {
-          "card": "n50",
-          "from": 1,
-          "position": 4,
-          "ms": 460,
-          "cents": null
-        },
-        {
-          "card": "n70",
-          "from": 4,
-          "position": 1,
-          "ms": 2120,
-          "cents": null
-        },
-        {
-          "card": "n66",
-          "from": 1,
-          "position": 5,
-          "ms": 2140,
-          "cents": null
-        },
-        {
-          "card": "n65",
-          "from": 5,
-          "position": 1,
-          "ms": 1840,
-          "cents": null
-        },
-        {
-          "card": "n52",
-          "from": 1,
-          "position": 7,
-          "ms": 320,
-          "cents": null
-        },
-        {
-          "card": "n41",
-          "from": 7,
-          "position": 6,
-          "ms": 520,
-          "cents": null
-        },
-        {
-          "card": "n47",
-          "from": 6,
-          "position": 7,
-          "ms": 380,
-          "cents": null
-        },
-        {
-          "card": "n46",
-          "from": 7,
-          "position": 1,
-          "ms": 280,
-          "cents": null
-        },
-        {
-          "card": "n59",
-          "from": 1,
-          "position": 7,
-          "ms": 1820,
-          "cents": null
-        },
-        {
-          "card": "n68",
-          "from": 7,
-          "position": 1,
-          "ms": 1300,
-          "cents": null
-        },
-        {
-          "card": "n42",
-          "from": 1,
-          "position": 5,
-          "ms": 620,
-          "cents": null
-        },
-        {
-          "card": "n51",
-          "from": 5,
-          "position": 3,
-          "ms": 1020,
-          "cents": null
-        },
-        {
-          "card": "n46",
-          "from": 3,
-          "position": 1,
-          "ms": 420,
-          "cents": null
-        }
-      ],
-      "expected": {
-        "score": 19287,
+        "score": 18702,
         "found": 17,
         "answered": 17,
         "best_combo": 4,
@@ -3602,18 +3602,18 @@
     {
       "name": "play_the_note_tenor seed 1",
       "game": "play_the_note_tenor",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
-          "card": "n62",
+          "card": "n50",
           "from": 3,
-          "position": 1,
+          "position": 4,
           "ms": 520,
           "cents": -7.2
         },
         {
-          "card": "n66",
-          "from": 1,
+          "card": "n58",
+          "from": 4,
           "position": 5,
           "ms": 500,
           "cents": 4.83
@@ -3626,106 +3626,106 @@
           "cents": 0.5
         },
         {
-          "card": "n40",
+          "card": "n66",
           "from": 2,
-          "position": 7,
+          "position": 3,
           "ms": 320,
           "cents": -2.87
         },
         {
-          "card": "n46",
-          "from": 7,
-          "position": 1,
+          "card": "n61",
+          "from": 3,
+          "position": 5,
           "ms": 480,
           "cents": 8.0
         },
         {
-          "card": "n51",
-          "from": 1,
-          "position": 3,
+          "card": "n52",
+          "from": 5,
+          "position": 7,
           "ms": 1480,
           "cents": -14.51
         },
         {
-          "card": "n42",
-          "from": 3,
-          "position": 5,
+          "card": "n65",
+          "from": 7,
+          "position": 4,
           "ms": 1060,
           "cents": 5.98
         },
         {
-          "card": "n55",
-          "from": 5,
-          "position": 4,
+          "card": "n54",
+          "from": 4,
+          "position": 5,
           "ms": 600,
           "cents": 0.23
         },
         {
           "card": "n51",
-          "from": 4,
+          "from": 5,
           "position": 3,
           "ms": 640,
           "cents": 2.07
         },
         {
-          "card": "n42",
+          "card": "n65",
           "from": 3,
-          "position": 5,
+          "position": 6,
           "ms": 2140,
           "cents": 17.0
         },
         {
-          "card": "n68",
-          "from": 5,
-          "position": 3,
+          "card": "n56",
+          "from": 6,
+          "position": 7,
           "ms": 360,
           "cents": 7.03
         },
         {
-          "card": "n46",
-          "from": 3,
+          "card": "n57",
+          "from": 7,
           "position": null,
           "ms": null,
           "cents": null
         },
         {
-          "card": "n70",
-          "from": 3,
-          "position": 1,
+          "card": "n67",
+          "from": 7,
+          "position": 4,
           "ms": 460,
           "cents": -4.86
         },
         {
-          "card": "n48",
-          "from": 1,
-          "position": 6,
+          "card": "n52",
+          "from": 4,
+          "position": 7,
           "ms": 980,
           "cents": 2.44
         },
         {
           "card": "n58",
-          "from": 6,
+          "from": 7,
           "position": 5,
           "ms": 540,
           "cents": 8.48
         },
         {
-          "card": "n63",
+          "card": "n52",
           "from": 5,
-          "position": 3,
+          "position": 2,
           "ms": 320,
           "cents": 2.39
         },
         {
-          "card": "n49",
-          "from": 3,
-          "position": 5,
+          "card": "n60",
+          "from": 2,
+          "position": 3,
           "ms": 420,
           "cents": 8.74
         }
       ],
       "expected": {
-        "score": 34776,
+        "score": 34312,
         "found": 16,
         "answered": 17,
         "best_combo": 5,
@@ -3735,7 +3735,7 @@
     {
       "name": "play_the_note_tenor seed 2",
       "game": "play_the_note_tenor",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
           "card": "n60",
@@ -3745,85 +3745,85 @@
           "cents": 2.34
         },
         {
-          "card": "n43",
+          "card": "n58",
           "from": 3,
-          "position": 4,
+          "position": 5,
           "ms": 640,
           "cents": 3.98
         },
         {
-          "card": "n66",
-          "from": 4,
-          "position": 3,
+          "card": "n67",
+          "from": 5,
+          "position": 2,
           "ms": 500,
           "cents": 7.08
         },
         {
-          "card": "n47",
-          "from": 3,
-          "position": 7,
+          "card": "n58",
+          "from": 2,
+          "position": 1,
           "ms": 1160,
           "cents": 3.97
         },
         {
-          "card": "n45",
-          "from": 7,
-          "position": 2,
+          "card": "n59",
+          "from": 1,
+          "position": 7,
           "ms": 460,
           "cents": -3.5
         },
         {
-          "card": "n68",
-          "from": 2,
-          "position": 3,
+          "card": "n69",
+          "from": 7,
+          "position": 2,
           "ms": 2120,
           "cents": 7.68
         },
         {
-          "card": "n70",
-          "from": 3,
-          "position": 1,
+          "card": "n53",
+          "from": 2,
+          "position": 6,
           "ms": 2140,
           "cents": 19.37
         },
         {
-          "card": "n54",
-          "from": 1,
-          "position": 5,
+          "card": "n67",
+          "from": 6,
+          "position": 2,
           "ms": 1840,
           "cents": 21.46
         },
         {
-          "card": "n51",
-          "from": 5,
-          "position": 3,
+          "card": "n50",
+          "from": 2,
+          "position": 4,
           "ms": 320,
           "cents": 6.11
         },
         {
-          "card": "n61",
-          "from": 3,
-          "position": 5,
+          "card": "n53",
+          "from": 4,
+          "position": 6,
           "ms": 520,
           "cents": -1.88
         },
         {
-          "card": "n70",
-          "from": 5,
-          "position": 1,
+          "card": "n59",
+          "from": 6,
+          "position": 7,
           "ms": 380,
           "cents": 1.15
         },
         {
-          "card": "n47",
-          "from": 1,
-          "position": 7,
+          "card": "n58",
+          "from": 7,
+          "position": 5,
           "ms": 280,
           "cents": -2.35
         },
         {
           "card": "n68",
-          "from": 7,
+          "from": 5,
           "position": 3,
           "ms": 1820,
           "cents": 2.05
@@ -3843,22 +3843,22 @@
           "cents": 6.36
         },
         {
-          "card": "n40",
+          "card": "n60",
           "from": 5,
-          "position": 7,
+          "position": 3,
           "ms": 1020,
           "cents": -5.57
         },
         {
-          "card": "n54",
-          "from": 7,
-          "position": 5,
+          "card": "n57",
+          "from": 3,
+          "position": 6,
           "ms": 420,
           "cents": -2.58
         }
       ],
       "expected": {
-        "score": 30148,
+        "score": 26985,
         "found": 17,
         "answered": 17,
         "best_combo": 4,
@@ -3868,130 +3868,130 @@
     {
       "name": "play_the_note_alto seed 1",
       "game": "play_the_note_alto",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
-          "card": "n62",
+          "card": "n53",
           "from": 3,
-          "position": 1,
+          "position": 6,
           "ms": 520,
           "cents": -7.2
-        },
-        {
-          "card": "n66",
-          "from": 1,
-          "position": 5,
-          "ms": 500,
-          "cents": 4.83
-        },
-        {
-          "card": "n52",
-          "from": 5,
-          "position": 2,
-          "ms": 300,
-          "cents": 0.5
-        },
-        {
-          "card": "n40",
-          "from": 2,
-          "position": 7,
-          "ms": 320,
-          "cents": -2.87
-        },
-        {
-          "card": "n46",
-          "from": 7,
-          "position": 1,
-          "ms": 480,
-          "cents": 8.0
-        },
-        {
-          "card": "n51",
-          "from": 1,
-          "position": 3,
-          "ms": 1480,
-          "cents": -14.51
-        },
-        {
-          "card": "n42",
-          "from": 3,
-          "position": 5,
-          "ms": 1060,
-          "cents": 5.98
-        },
-        {
-          "card": "n55",
-          "from": 5,
-          "position": 4,
-          "ms": 600,
-          "cents": 0.23
-        },
-        {
-          "card": "n51",
-          "from": 4,
-          "position": 3,
-          "ms": 640,
-          "cents": 2.07
-        },
-        {
-          "card": "n42",
-          "from": 3,
-          "position": 5,
-          "ms": 2140,
-          "cents": 17.0
-        },
-        {
-          "card": "n68",
-          "from": 5,
-          "position": 3,
-          "ms": 360,
-          "cents": 7.03
-        },
-        {
-          "card": "n46",
-          "from": 3,
-          "position": null,
-          "ms": null,
-          "cents": null
-        },
-        {
-          "card": "n70",
-          "from": 3,
-          "position": 1,
-          "ms": 460,
-          "cents": -4.86
-        },
-        {
-          "card": "n48",
-          "from": 1,
-          "position": 6,
-          "ms": 980,
-          "cents": 2.44
         },
         {
           "card": "n58",
           "from": 6,
           "position": 5,
+          "ms": 500,
+          "cents": 4.83
+        },
+        {
+          "card": "n53",
+          "from": 5,
+          "position": 1,
+          "ms": 300,
+          "cents": 0.5
+        },
+        {
+          "card": "n71",
+          "from": 1,
+          "position": 2,
+          "ms": 320,
+          "cents": -2.87
+        },
+        {
+          "card": "n54",
+          "from": 2,
+          "position": 5,
+          "ms": 480,
+          "cents": 8.0
+        },
+        {
+          "card": "n59",
+          "from": 5,
+          "position": 7,
+          "ms": 1480,
+          "cents": -14.51
+        },
+        {
+          "card": "n73",
+          "from": 7,
+          "position": 2,
+          "ms": 1060,
+          "cents": 5.98
+        },
+        {
+          "card": "n63",
+          "from": 2,
+          "position": 3,
+          "ms": 600,
+          "cents": 0.23
+        },
+        {
+          "card": "n69",
+          "from": 3,
+          "position": 6,
+          "ms": 640,
+          "cents": 2.07
+        },
+        {
+          "card": "n62",
+          "from": 6,
+          "position": 7,
+          "ms": 2140,
+          "cents": 17.0
+        },
+        {
+          "card": "n71",
+          "from": 7,
+          "position": 4,
+          "ms": 360,
+          "cents": 7.03
+        },
+        {
+          "card": "n73",
+          "from": 4,
+          "position": null,
+          "ms": null,
+          "cents": null
+        },
+        {
+          "card": "n64",
+          "from": 4,
+          "position": 2,
+          "ms": 460,
+          "cents": -4.86
+        },
+        {
+          "card": "n72",
+          "from": 2,
+          "position": 3,
+          "ms": 980,
+          "cents": 2.44
+        },
+        {
+          "card": "n55",
+          "from": 3,
+          "position": 4,
           "ms": 540,
           "cents": 8.48
         },
         {
-          "card": "n63",
-          "from": 5,
+          "card": "n56",
+          "from": 4,
           "position": 3,
           "ms": 320,
           "cents": 2.39
         },
         {
-          "card": "n49",
+          "card": "n58",
           "from": 3,
-          "position": 5,
+          "position": 1,
           "ms": 420,
           "cents": 8.74
         }
       ],
       "expected": {
-        "score": 34776,
+        "score": 34451,
         "found": 16,
         "answered": 17,
         "best_combo": 5,
@@ -4001,95 +4001,361 @@
     {
       "name": "play_the_note_alto seed 2",
       "game": "play_the_note_alto",
-      "rules_version": 1,
+      "rules_version": 2,
       "cards": [
         {
-          "card": "n60",
+          "card": "n71",
           "from": 7,
-          "position": 3,
+          "position": 2,
           "ms": 1340,
           "cents": 2.34
         },
         {
-          "card": "n43",
-          "from": 3,
-          "position": 4,
+          "card": "n62",
+          "from": 2,
+          "position": 7,
           "ms": 640,
           "cents": 3.98
+        },
+        {
+          "card": "n65",
+          "from": 7,
+          "position": 1,
+          "ms": 500,
+          "cents": 7.08
+        },
+        {
+          "card": "n71",
+          "from": 1,
+          "position": 2,
+          "ms": 1160,
+          "cents": 3.97
+        },
+        {
+          "card": "n63",
+          "from": 2,
+          "position": 6,
+          "ms": 460,
+          "cents": -3.5
+        },
+        {
+          "card": "n54",
+          "from": 6,
+          "position": 5,
+          "ms": 2120,
+          "cents": 7.68
+        },
+        {
+          "card": "n57",
+          "from": 5,
+          "position": 6,
+          "ms": 2140,
+          "cents": 19.37
+        },
+        {
+          "card": "n66",
+          "from": 6,
+          "position": 3,
+          "ms": 1840,
+          "cents": 21.46
+        },
+        {
+          "card": "n69",
+          "from": 3,
+          "position": 4,
+          "ms": 320,
+          "cents": 6.11
         },
         {
           "card": "n66",
           "from": 4,
           "position": 3,
+          "ms": 520,
+          "cents": -1.88
+        },
+        {
+          "card": "n59",
+          "from": 3,
+          "position": 7,
+          "ms": 380,
+          "cents": 1.15
+        },
+        {
+          "card": "n71",
+          "from": 7,
+          "position": 4,
+          "ms": 280,
+          "cents": -2.35
+        },
+        {
+          "card": "n70",
+          "from": 4,
+          "position": 1,
+          "ms": 1820,
+          "cents": 2.05
+        },
+        {
+          "card": "n66",
+          "from": 1,
+          "position": 7,
+          "ms": 1300,
+          "cents": -7.54
+        },
+        {
+          "card": "n58",
+          "from": 7,
+          "position": 5,
+          "ms": 620,
+          "cents": 6.36
+        },
+        {
+          "card": "n69",
+          "from": 5,
+          "position": 2,
+          "ms": 1020,
+          "cents": -5.57
+        },
+        {
+          "card": "n72",
+          "from": 2,
+          "position": 3,
+          "ms": 420,
+          "cents": -2.58
+        }
+      ],
+      "expected": {
+        "score": 26858,
+        "found": 17,
+        "answered": 17,
+        "best_combo": 4,
+        "in_tune": 15
+      }
+    },
+    {
+      "name": "play_the_note_mixed seed 1",
+      "game": "play_the_note_mixed",
+      "rules_version": 2,
+      "cards": [
+        {
+          "card": "n43",
+          "from": 3,
+          "position": 4,
+          "ms": 520,
+          "cents": -7.2
+        },
+        {
+          "card": "n68",
+          "from": 4,
+          "position": 3,
+          "ms": 500,
+          "cents": 4.83
+        },
+        {
+          "card": "n58",
+          "from": 3,
+          "position": 1,
+          "ms": 300,
+          "cents": 0.5
+        },
+        {
+          "card": "n64",
+          "from": 1,
+          "position": 5,
+          "ms": 320,
+          "cents": -2.87
+        },
+        {
+          "card": "n63",
+          "from": 5,
+          "position": 6,
+          "ms": 480,
+          "cents": 8.0
+        },
+        {
+          "card": "n70",
+          "from": 6,
+          "position": 1,
+          "ms": 1480,
+          "cents": -14.51
+        },
+        {
+          "card": "n73",
+          "from": 1,
+          "position": 2,
+          "ms": 1060,
+          "cents": 5.98
+        },
+        {
+          "card": "n55",
+          "from": 2,
+          "position": 4,
+          "ms": 600,
+          "cents": 0.23
+        },
+        {
+          "card": "n66",
+          "from": 4,
+          "position": 7,
+          "ms": 640,
+          "cents": 2.07
+        },
+        {
+          "card": "n69",
+          "from": 7,
+          "position": 6,
+          "ms": 2140,
+          "cents": 17.0
+        },
+        {
+          "card": "n64",
+          "from": 6,
+          "position": 2,
+          "ms": 360,
+          "cents": 7.03
+        },
+        {
+          "card": "n41",
+          "from": 2,
+          "position": null,
+          "ms": null,
+          "cents": null
+        },
+        {
+          "card": "n48",
+          "from": 2,
+          "position": 6,
+          "ms": 460,
+          "cents": -4.86
+        },
+        {
+          "card": "n61",
+          "from": 6,
+          "position": 5,
+          "ms": 980,
+          "cents": 2.44
+        },
+        {
+          "card": "n59",
+          "from": 5,
+          "position": 7,
+          "ms": 540,
+          "cents": 8.48
+        },
+        {
+          "card": "n57",
+          "from": 7,
+          "position": 2,
+          "ms": 320,
+          "cents": 2.39
+        },
+        {
+          "card": "n53",
+          "from": 2,
+          "position": 1,
+          "ms": 420,
+          "cents": 8.74
+        }
+      ],
+      "expected": {
+        "score": 34074,
+        "found": 16,
+        "answered": 17,
+        "best_combo": 5,
+        "in_tune": 14
+      }
+    },
+    {
+      "name": "play_the_note_mixed seed 2",
+      "game": "play_the_note_mixed",
+      "rules_version": 2,
+      "cards": [
+        {
+          "card": "n54",
+          "from": 7,
+          "position": 5,
+          "ms": 1340,
+          "cents": 2.34
+        },
+        {
+          "card": "n72",
+          "from": 5,
+          "position": 3,
+          "ms": 640,
+          "cents": 3.98
+        },
+        {
+          "card": "n50",
+          "from": 3,
+          "position": 4,
           "ms": 500,
           "cents": 7.08
         },
         {
-          "card": "n47",
-          "from": 3,
+          "card": "n64",
+          "from": 4,
           "position": 7,
           "ms": 1160,
           "cents": 3.97
         },
         {
-          "card": "n45",
+          "card": "n51",
           "from": 7,
-          "position": 2,
+          "position": 3,
           "ms": 460,
           "cents": -3.5
         },
         {
-          "card": "n68",
-          "from": 2,
-          "position": 3,
+          "card": "n71",
+          "from": 3,
+          "position": 4,
           "ms": 2120,
           "cents": 7.68
         },
         {
-          "card": "n70",
-          "from": 3,
-          "position": 1,
+          "card": "n47",
+          "from": 4,
+          "position": 7,
           "ms": 2140,
           "cents": 19.37
+        },
+        {
+          "card": "n65",
+          "from": 7,
+          "position": 1,
+          "ms": 1840,
+          "cents": 21.46
         },
         {
           "card": "n54",
           "from": 1,
           "position": 5,
-          "ms": 1840,
-          "cents": 21.46
-        },
-        {
-          "card": "n51",
-          "from": 5,
-          "position": 3,
           "ms": 320,
           "cents": 6.11
         },
         {
-          "card": "n61",
-          "from": 3,
-          "position": 5,
+          "card": "n40",
+          "from": 5,
+          "position": 7,
           "ms": 520,
           "cents": -1.88
         },
         {
-          "card": "n70",
-          "from": 5,
+          "card": "n65",
+          "from": 7,
           "position": 1,
           "ms": 380,
           "cents": 1.15
         },
         {
-          "card": "n47",
+          "card": "n57",
           "from": 1,
-          "position": 7,
+          "position": 6,
           "ms": 280,
           "cents": -2.35
         },
         {
           "card": "n68",
-          "from": 7,
+          "from": 6,
           "position": 3,
           "ms": 1820,
           "cents": 2.05
@@ -4102,295 +4368,29 @@
           "cents": -7.54
         },
         {
-          "card": "n66",
+          "card": "n57",
           "from": 7,
-          "position": 5,
+          "position": 6,
           "ms": 620,
           "cents": 6.36
         },
         {
-          "card": "n40",
-          "from": 5,
-          "position": 7,
+          "card": "n55",
+          "from": 6,
+          "position": 4,
           "ms": 1020,
           "cents": -5.57
-        },
-        {
-          "card": "n54",
-          "from": 7,
-          "position": 5,
-          "ms": 420,
-          "cents": -2.58
-        }
-      ],
-      "expected": {
-        "score": 30148,
-        "found": 17,
-        "answered": 17,
-        "best_combo": 4,
-        "in_tune": 15
-      }
-    },
-    {
-      "name": "play_the_note_mixed seed 1",
-      "game": "play_the_note_mixed",
-      "rules_version": 1,
-      "cards": [
-        {
-          "card": "n62",
-          "from": 3,
-          "position": 1,
-          "ms": 520,
-          "cents": -7.2
-        },
-        {
-          "card": "n51",
-          "from": 1,
-          "position": 3,
-          "ms": 500,
-          "cents": 4.83
-        },
-        {
-          "card": "n46",
-          "from": 3,
-          "position": 1,
-          "ms": 300,
-          "cents": 0.5
-        },
-        {
-          "card": "n42",
-          "from": 1,
-          "position": 5,
-          "ms": 320,
-          "cents": -2.87
-        },
-        {
-          "card": "n51",
-          "from": 5,
-          "position": 3,
-          "ms": 480,
-          "cents": 8.0
-        },
-        {
-          "card": "n67",
-          "from": 3,
-          "position": 4,
-          "ms": 1480,
-          "cents": -14.51
         },
         {
           "card": "n61",
           "from": 4,
-          "position": 2,
-          "ms": 1060,
-          "cents": 5.98
-        },
-        {
-          "card": "n56",
-          "from": 2,
-          "position": 3,
-          "ms": 600,
-          "cents": 0.23
-        },
-        {
-          "card": "n49",
-          "from": 3,
           "position": 5,
-          "ms": 640,
-          "cents": 2.07
-        },
-        {
-          "card": "n51",
-          "from": 5,
-          "position": 3,
-          "ms": 2140,
-          "cents": 17.0
-        },
-        {
-          "card": "n62",
-          "from": 3,
-          "position": 1,
-          "ms": 360,
-          "cents": 7.03
-        },
-        {
-          "card": "n43",
-          "from": 1,
-          "position": null,
-          "ms": null,
-          "cents": null
-        },
-        {
-          "card": "n59",
-          "from": 1,
-          "position": 7,
-          "ms": 460,
-          "cents": -4.86
-        },
-        {
-          "card": "n67",
-          "from": 7,
-          "position": 4,
-          "ms": 980,
-          "cents": 2.44
-        },
-        {
-          "card": "n45",
-          "from": 4,
-          "position": 2,
-          "ms": 540,
-          "cents": 8.48
-        },
-        {
-          "card": "n43",
-          "from": 2,
-          "position": 4,
-          "ms": 320,
-          "cents": 2.39
-        },
-        {
-          "card": "n46",
-          "from": 4,
-          "position": 1,
-          "ms": 420,
-          "cents": 8.74
-        }
-      ],
-      "expected": {
-        "score": 34373,
-        "found": 16,
-        "answered": 17,
-        "best_combo": 5,
-        "in_tune": 14
-      }
-    },
-    {
-      "name": "play_the_note_mixed seed 2",
-      "game": "play_the_note_mixed",
-      "rules_version": 1,
-      "cards": [
-        {
-          "card": "n60",
-          "from": 7,
-          "position": 3,
-          "ms": 1340,
-          "cents": 2.34
-        },
-        {
-          "card": "n65",
-          "from": 3,
-          "position": 6,
-          "ms": 640,
-          "cents": 3.98
-        },
-        {
-          "card": "n45",
-          "from": 6,
-          "position": 2,
-          "ms": 500,
-          "cents": 7.08
-        },
-        {
-          "card": "n70",
-          "from": 2,
-          "position": 1,
-          "ms": 1160,
-          "cents": 3.97
-        },
-        {
-          "card": "n50",
-          "from": 1,
-          "position": 4,
-          "ms": 460,
-          "cents": -3.5
-        },
-        {
-          "card": "n70",
-          "from": 4,
-          "position": 1,
-          "ms": 2120,
-          "cents": 7.68
-        },
-        {
-          "card": "n66",
-          "from": 1,
-          "position": 5,
-          "ms": 2140,
-          "cents": 19.37
-        },
-        {
-          "card": "n65",
-          "from": 5,
-          "position": 1,
-          "ms": 1840,
-          "cents": 21.46
-        },
-        {
-          "card": "n52",
-          "from": 1,
-          "position": 7,
-          "ms": 320,
-          "cents": 6.11
-        },
-        {
-          "card": "n41",
-          "from": 7,
-          "position": 6,
-          "ms": 520,
-          "cents": -1.88
-        },
-        {
-          "card": "n47",
-          "from": 6,
-          "position": 7,
-          "ms": 380,
-          "cents": 1.15
-        },
-        {
-          "card": "n46",
-          "from": 7,
-          "position": 1,
-          "ms": 280,
-          "cents": -2.35
-        },
-        {
-          "card": "n59",
-          "from": 1,
-          "position": 7,
-          "ms": 1820,
-          "cents": 2.05
-        },
-        {
-          "card": "n68",
-          "from": 7,
-          "position": 1,
-          "ms": 1300,
-          "cents": -7.54
-        },
-        {
-          "card": "n42",
-          "from": 1,
-          "position": 5,
-          "ms": 620,
-          "cents": 6.36
-        },
-        {
-          "card": "n51",
-          "from": 5,
-          "position": 3,
-          "ms": 1020,
-          "cents": -5.57
-        },
-        {
-          "card": "n46",
-          "from": 3,
-          "position": 1,
           "ms": 420,
           "cents": -2.58
         }
       ],
       "expected": {
-        "score": 29122,
+        "score": 26898,
         "found": 17,
         "answered": 17,
         "best_combo": 4,

@@ -130,6 +130,35 @@ void main() {
       expect(seen, Clef.values.toSet());
     });
 
+    test('clef levels keep to their staff: tenor D3–B♭4, alto F3–D♭5', () {
+      String span(FlashGameSpec l, Clef c) {
+        final m = (l.deck() as NoteDeck).midisIn(c);
+        return '${NoteDeck.noteName(m.first)}–${NoteDeck.noteName(m.last)}';
+      }
+      expect(span(noteFlashLevels[3], Clef.tenor), 'D3–B♭4');
+      expect(span(noteFlashLevels[4], Clef.alto), 'F3–D♭5');
+      final mixed = noteFlashLevels[5];
+      expect(span(mixed, Clef.bass), 'E2–B♭4');
+      expect(span(mixed, Clef.tenor), 'D3–B♭4');
+      expect(span(mixed, Clef.alto), 'F3–D♭5');
+      // Above B♭4 take partials 9 and 10: C5 in 1st, D♭5 in 2nd.
+      final alto = noteFlashLevels[4].deck().cards;
+      expect(alto.firstWhere((c) => c.label == 'C5').positions, contains(1));
+      expect(alto.last.positions, contains(2));
+      expect(alto.every((c) => c.positions.isNotEmpty), isTrue);
+      // All clefs deals each clef only its own notes.
+      for (final l in [noteFlashLevels[3], noteFlashLevels[4], mixed]) {
+        final deck = l.deck() as NoteDeck;
+        final rng = math.Random(7);
+        FlashCard? last;
+        for (var i = 0; i < 2000; i++) {
+          last = deck.deal(1 + i % 7, last, rng);
+          expect(deck.midisIn(last.clef), contains(last.midi), reason: l.id);
+        }
+      }
+      expect([for (final l in noteFlashLevels) l.rulesVersion], [3, 1, 1, 2, 2, 2]);
+    });
+
     testWidgets('the tab: a card per game, its level and progress', (tester) async {
       tall(tester);
       final s = await freshScores();
