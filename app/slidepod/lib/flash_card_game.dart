@@ -170,11 +170,14 @@ class NoteDeck extends FlashDeck {
       {this.lowMidi = 41, // F2
       this.highMidi = 65, // F4
       this.maxPartial = 6,
-      this.clefs = const [Clef.bass]});
+      this.clefs = const [Clef.bass],
+      this.clefRanges = const {}});
 
-  /// MIDI note of each partial in 1st position, from the 2nd (B♭2), as in
-  /// the app's chart (TromboneChart).
-  static const _firstPosition = {2: 46, 3: 53, 4: 58, 5: 62, 6: 65, 7: 68, 8: 70};
+  /// MIDI note of each partial in 1st position, from the 2nd (B♭2): as in
+  /// the app's chart (TromboneChart) to the 8th, then C5 and D5.
+  static const _firstPosition = {
+    2: 46, 3: 53, 4: 58, 5: 62, 6: 65, 7: 68, 8: 70, 9: 72, 10: 74,
+  };
 
   /// Spelled the usual way for trombone (flats).
   static const _names = [
@@ -200,10 +203,35 @@ class NoteDeck extends FlashDeck {
           clef: clefs.first),
   ];
 
+  /// The notes each clef deals, where a level limits them: parts in a clef
+  /// stay near its staff (composers change clef to keep them there), so
+  /// the alto clef runs from its bottom line up, not down to E2. Clefs not
+  /// listed deal every card.
+  final Map<Clef, (int, int)> clefRanges;
+
+  /// The notes [clef] deals.
+  List<int> midisIn(Clef clef) {
+    final (low, high) = clefRanges[clef] ?? (lowMidi, highMidi);
+    return [for (var m = math.max(low, lowMidi); m <= math.min(high, highMidi); m++) m];
+  }
+
   @override
   FlashCard deal(int from, FlashCard? last, math.Random rng) {
-    final c = super.deal(from, last, rng);
-    return clefs.length == 1 ? c : c.inClef(clefs[rng.nextInt(clefs.length)]);
+    if (clefRanges.isEmpty) {
+      final c = super.deal(from, last, rng);
+      return clefs.length == 1 ? c : c.inClef(clefs[rng.nextInt(clefs.length)]);
+    }
+    final clef = clefs.length == 1 ? clefs.first : clefs[rng.nextInt(clefs.length)];
+    final notes = midisIn(clef);
+    final choices = [
+      for (final c in cards)
+        if (c.midi! >= notes.first &&
+            c.midi! <= notes.last &&
+            !c.positions.contains(from) &&
+            c.id != last?.id)
+          c,
+    ];
+    return choices[rng.nextInt(choices.length)].inClef(clef);
   }
 }
 

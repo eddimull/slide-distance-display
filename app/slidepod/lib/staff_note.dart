@@ -36,6 +36,12 @@ class StaffRange {
     return StaffRange(top, bottom);
   }
 
+  /// The extent that covers all of [ranges].
+  factory StaffRange.union(Iterable<StaffRange> ranges) => StaffRange(
+        ranges.map((r) => r.top).reduce(math.max),
+        ranges.map((r) => r.bottom).reduce(math.min),
+      );
+
   /// Height for this range at [space].
   double height(double space) => (top - bottom) * space / 2 + space * 0.6;
 
